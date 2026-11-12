@@ -207,6 +207,22 @@
 
   const app = Vue.createApp(App);
   app.use(PrimeVue.Config, { theme: { preset, options: { darkModeSelector: '.app-dark' } } });
+  // ข้อความในตัว PrimeVue เป็นไทย — Config รวม option แบบตื้น จึงเติมทับ locale เดิมแทนส่ง locale ใหม่ทั้งก้อน
+  const locale = app.config.globalProperties.$primevue.config.locale;
+  Object.assign(locale, {
+    emptyFilterMessage: 'ไม่พบรายการ', emptySearchMessage: 'ไม่พบรายการ', emptyMessage: 'ไม่มีตัวเลือก',
+    searchMessage: 'พบ {0} รายการ', selectionMessage: 'เลือก {0} รายการ', emptySelectionMessage: 'ยังไม่ได้เลือก',
+    noFilter: 'ไม่กรอง', clear: 'ล้าง', apply: 'ใช้', accept: 'ใช่', reject: 'ไม่', cancel: 'ยกเลิก',
+  });
+  Object.assign(locale.aria, {
+    close: 'ปิด', previous: 'ก่อนหน้า', next: 'ถัดไป', navigation: 'การนำทาง', listLabel: 'รายการตัวเลือก',
+    trueLabel: 'ใช่', falseLabel: 'ไม่ใช่', nullLabel: 'ไม่ได้เลือก',
+    selectAll: 'เลือกทั้งหมดแล้ว', unselectAll: 'ไม่ได้เลือกทั้งหมด', selectRow: 'เลือกแถวแล้ว', unselectRow: 'ไม่ได้เลือกแถว',
+    pageLabel: 'หน้า {page}', firstPageLabel: 'หน้าแรก', lastPageLabel: 'หน้าสุดท้าย', nextPageLabel: 'หน้าถัดไป', prevPageLabel: 'หน้าก่อน',
+    rowsPerPageLabel: 'แถวต่อหน้า', jumpToPageDropdownLabel: 'ไปที่หน้า', jumpToPageInputLabel: 'ไปที่หน้า',
+    expandRow: 'ขยายแถว', collapseRow: 'ยุบแถว', showFilterMenu: 'แสดงตัวกรอง', hideFilterMenu: 'ซ่อนตัวกรอง',
+    scrollTop: 'เลื่อนขึ้นบนสุด',
+  });
   app.use(PrimeVue.ToastService);
   app.use(PrimeVue.ConfirmationService);
   // ลงทะเบียน component ทุกตัวของ PrimeVue เป็น p-<ชื่อ> เช่น p-datatable, p-select
