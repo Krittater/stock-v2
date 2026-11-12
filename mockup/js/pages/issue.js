@@ -112,13 +112,7 @@
       const createOpen = ref(false);
       const onCreated = async (p, { existing, receipt }) => {
         if (!inCart.value.has(p.id)) cart.value.lines.push({ productId: p.id, qty: 1 });
-        let msg = existing ? `เลือก ${p.name} (${p.id}) แล้ว` : `สร้างแล้ว: ${p.name} (${p.id}) เลือกให้แล้ว`;
-        if (receipt) {
-          const q = fmt(receipt.lines[0].qty, p.unit);
-          msg += receipt.status === 'posted' ? ` · ลงยอด ${q} เข้าคลังแล้ว`
-            : ` · ส่งให้ Store ยืนยันยอด ${q} แล้ว (${receipt.id}) ระหว่างนี้เบิกได้ แต่จะรอของ`;
-        }
-        toast(msg, receipt ? 4000 : 3000);
+        if (existing) toast(`เลือก ${p.name} (${p.id}) แล้ว`); // สร้างใหม่: dialog โชว์ toast เอง
         await nextTick();
         lineEl(p.id)?.querySelector('input')?.focus({ preventScroll: true });
         flash(p.id);
@@ -463,7 +457,7 @@
         </div>
       </p-dialog>
 
-      <product-dialog v-model:visible="createOpen" :initial-name="text" @created="onCreated" />
+      <product-dialog v-model:visible="createOpen" :initial-name="text" created-note=" เลือกให้แล้ว" @created="onCreated" />
     </div>`,
   };
 })();

@@ -14,7 +14,7 @@
   });
 
   window.ProductDialog = {
-    props: { visible: Boolean, initialName: String, product: Object }, // product = โหมดแก้ไข (emit 'saved')
+    props: { visible: Boolean, initialName: String, product: Object, createdNote: String }, // product = โหมดแก้ไข (emit 'saved')
     emits: ['update:visible', 'created', 'saved'],
     setup(props, { emit }) {
       const f = reactive(blank());
@@ -63,7 +63,7 @@
       };
       const save = () => {
         const patch = { name: f.name, brand: f.brand.trim(), model: f.model.trim(), code: f.code, categoryId: f.categoryId, unit: unit.value, reorderPoint: f.reorderPoint ?? 0 };
-        const p = act((s) => Domain.updateProduct(s, props.product.id, patch), (x) => `บันทึก ${x.name} แล้ว`);
+        const p = act((s) => Domain.updateProduct(s, props.product.id, patch), (x) => `บันทึกแล้ว: ${x.name}`);
         if (p) { emit('saved', p); close(); }
       };
       const create = () => {
@@ -72,7 +72,16 @@
           unit: unit.value, reorderPoint: f.reorderPoint ?? 0,
           initial: f.hasStock ? { whId: f.whId, qty: f.qty } : null,
         };
-        const r = act((s, u) => Domain.addProduct(s, input, u));
+        const r = act((s, u) => Domain.addProduct(s, input, u), (x) => {
+          let msg = `สร้างแล้ว: ${x.product.name} (${x.product.id})${props.createdNote || ''}`;
+          const rc = x.receipt;
+          if (rc) {
+            const q = Domain.formatQty(rc.lines[0].qty, x.product.unit);
+            msg += rc.status === 'posted' ? ` · ลงยอด ${q} เข้าคลังแล้ว`
+              : ` · ส่งให้ Store ยืนยันยอด ${q} แล้ว (${rc.id}) ระหว่างนี้เบิกได้ แต่จะรอของ`;
+          }
+          return msg;
+        });
         if (r) { emit('created', r.product, { existing: false, receipt: r.receipt }); close(); }
       };
       return { f, UNITS, OTHER, unit, catGroups, catSelect, newCat, openWarehouses, dup, similar, missing, stockNote, nextId,
@@ -86,7 +95,7 @@
           <p-inputtext id="pd-name" v-model="f.name" placeholder="เช่น น็อตสแตนเลส M8" autocomplete="off" :invalid="!!dup" fluid autofocus />
           <p-message v-if="dup" severity="error" class="pd-msg">
             <span class="pd-msg-row"><span>มีสินค้านี้แล้ว: <doc-id :id="dup.id" /> {{ dup.name }}</span>
-              <p-button label="ใช้รายการนี้" severity="danger" outlined @click="use(dup)" /></span>
+              <p-button v-if="!edit" label="ใช้รายการนี้" severity="danger" outlined @click="use(dup)" /></span>
           </p-message>
           <p-message v-for="p in similar" :key="p.id" severity="warn" class="pd-msg">
             <span class="pd-msg-row"><span>มีสินค้าชื่อคล้ายกันอยู่แล้ว ดูก่อนสร้าง · <doc-id :id="p.id" /> {{ p.name }}</span>
