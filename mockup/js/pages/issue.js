@@ -85,7 +85,7 @@
       const rowWh = reactive({}); // คลังที่ดูต่อแถว (ไม่ persist) — ไม่ได้เลือก = คลังของใบเบิก
       const whOf = (p) => rowWh[p.id] || cart.value.whId;
       const rowQty = (p) => Domain.qtyOf(state, p.id, whOf(p));
-      const rowStatus = (p) => Domain.stockStatus(state, p, whOf(p));
+      const rowStatus = (p) => (state.warehouses.find((w) => w.id === whOf(p))?.countId ? 'counting' : Domain.stockStatus(state, p, whOf(p)));
       const setRowWh = (p, id) => { rowWh[p.id] = id === cart.value.whId ? undefined : id; };
       const whOptions = (p) => state.warehouses.map((w) => ({ id: w.id, label: `${w.name} · ${fmt(Domain.qtyOf(state, p.id, w.id), p.unit)}` }));
       const cartStatus = (p) => Domain.stockStatus(state, p, cart.value.whId);
