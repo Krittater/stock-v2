@@ -104,7 +104,7 @@
               <h2 id="pr-h">รายการต้องซื้อที่รอของ ({{ prs.length }})</h2>
               <p-button label="ใส่ในใบรับ" icon="pi pi-arrow-right" iconPos="right" :disabled="!sel.length" @click="addPRs" />
             </div>
-            <p-datatable :value="prs" v-model:selection="sel" dataKey="id" paginator :rows="10" v-model:first="prFirst" class="rc-table">
+            <p-datatable :value="prs" v-model:selection="sel" selectionMode="multiple" :metaKeySelection="false" dataKey="id" paginator :rows="10" v-model:first="prFirst" class="rc-table">
               <p-column selectionMode="multiple" headerStyle="width:3rem" />
               <p-column header="PR"><template #body="{ data: r }"><doc-id :id="r.id" /></template></p-column>
               <p-column header="สินค้า"><template #body="{ data: r }"><div class="rc-prod">{{ r.p?.name }}</div></template></p-column>
