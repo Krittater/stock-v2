@@ -6,10 +6,20 @@
   const TYPE = { issue: ['เบิก', 'warn'], receive: ['รับ', 'info'], adjust: ['ปรับยอด', 'secondary'] };
   // [ข้อความ, tone] — ข้อความเสมอ ไม่พึ่งสีอย่างเดียว
   const STATUS = {
-    issue: { posted: ['จ่ายแล้ว', 'tone-green'], pending: ['รออนุมัติ', 'tone-orange'], rejected: ['ไม่อนุมัติ', 'tone-red'] },
+    issue: { pending: ['รออนุมัติ', 'tone-orange'], rejected: ['ไม่อนุมัติ', 'tone-red'] },
     receive: { posted: ['รับแล้ว', 'tone-green'], pending: ['รอยืนยัน', 'tone-orange'], rejected: ['ไม่มีของ', 'tone-red'] },
     adjust: { posted: ['ปรับยอดแล้ว', 'tone-blue'] },
   };
+  // ใบเบิกที่ลงยอดแล้วดูจากบรรทัด: ครบทุกบรรทัด = จ่ายแล้ว · ไม่ได้ของเลย = รอของเข้า · นอกนั้น = จ่ายบางส่วน
+  function statusOf(d) {
+    if (d.type === 'issue' && d.status === 'posted') {
+      const got = d.lines.map((l) => l.issued ?? l.qty); // ใบเก่าไม่มี issued = จ่ายครบ
+      if (d.lines.every((l, i) => got[i] >= l.qty)) return ['จ่ายแล้ว', 'tone-green'];
+      if (got.every((n) => !(n > 0))) return ['รอของเข้า', 'tone-orange'];
+      return ['จ่ายบางส่วน', 'tone-orange'];
+    }
+    return (STATUS[d.type] || {})[d.status] || [d.status, 'tone-gray'];
+  }
   const SHORTCUTS = [
     { label: 'เบิกของ', icon: 'pi-shopping-cart', to: ['issue'] },
     { label: 'รับของเข้า', icon: 'pi-download', to: ['receive'] },
@@ -25,7 +35,7 @@
       const jobName = (id) => { const j = state.jobs.find((x) => x.id === id); return j ? `${j.id} ${j.name}` : '-'; };
       const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
       const rows = computed(() => [...state.docs].sort((a, b) => b.at.localeCompare(a.at)).map((d) => ({
-        d, type: TYPE[d.type] || [d.type, 'secondary'], status: (STATUS[d.type] || {})[d.status] || [d.status, 'tone-gray'],
+        d, type: TYPE[d.type] || [d.type, 'secondary'], status: statusOf(d),
       })));
       const first = ref(0);
       const sel = ref(null);
