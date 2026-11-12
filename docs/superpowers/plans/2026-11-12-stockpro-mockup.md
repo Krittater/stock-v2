@@ -28,7 +28,7 @@
 - รูปแบบเลขเอกสาร (ปี พ.ศ. 69): สินค้า `P-0001` · ใบเบิก `REQ-690001` · รายการต้องซื้อ `PR-690001` · ใบรับ `RC-690001` · รอบนับ `CC-0001` · ใบปรับยอด `ADJ-690001` · งานใหม่ `J-26-001` · หมวด `C-001`
 - รองรับปริมาณ: seed 2,000 สินค้า · ตารางแบ่งหน้า 20 แถว (เลือก 20/50/100) ห้าม render ทุกแถว · ช่องค้นหา debounce 150ms
 - 390px ต้องไม่มี scroll แนวนอนทั้งหน้า (ตารางเลื่อนในกรอบตัวเองได้) · ≥1280px ใช้ layout ตามรูป (sidebar 220px · เนื้อหา · ตะกร้า 340px)
-- `localStorage` key `stockpro-mock-v1` · มีปุ่ม "รีเซ็ตข้อมูลตัวอย่าง" ในเมนูผู้ใช้
+- `localStorage` key `stockpro-mock-v2` · มีปุ่ม "รีเซ็ตข้อมูลตัวอย่าง" ในเมนูผู้ใช้
 - รูปสินค้า (ผู้ใช้ขอเพิ่ม 12 พ.ย. 2569 — ทับข้อ "ไม่ต้องใส่รูปสินค้า" ของ PDF ข้อ 8): หารูปฟรีก่อน ถ้าไม่มีรูปที่ใช้ได้ค่อยวาด SVG เอง (Task 9) · รูปเก็บในเครื่องที่ `mockup/img/` ห้าม hotlink · ลำดับการเลือกรูป: `product.image` → รูปหมวดย่อย → รูปหมวดแม่ → ไอคอนหมวด (PrimeIcon บนพื้นสีอ่อน) · ทรงตามรูปเป้าหมาย: สี่เหลี่ยมมุมโค้งพื้นขาวในตาราง/ตะกร้า, วงกลมในแถบหมวด · `<img loading="lazy">` + `object-fit: cover` · โหลดรูปไม่ได้ (`@error`) → กลับไปใช้ไอคอน
 - นอกขอบเขต (เมนูมีแต่เปิดแล้วเจอหน้า "ยังไม่อยู่ในขอบเขต mockup"): ขอซื้อ, โอนย้าย, รายงาน, ตั้งค่า›คลังสินค้า, ตั้งค่า›โครงการ/งาน, ตั้งค่า›ผู้ใช้งานและสิทธิ์ · ไม่ทำ: ติดตามม้วน (R-xxxxxx), QR/บาร์โค้ด, ออฟไลน์, ชิปสเปกสายไฟ, แท็บคืนของ
 
@@ -515,7 +515,7 @@ test('count permissions and cancel', () => {
 **Interfaces:**
 - Consumes: `Domain.*`, `Seed.build`
 - Produces:
-  - `AppState.state` — `Vue.reactive(Domain.parseSaved(localStorage.getItem('stockpro-mock-v1')) ?? Seed.build())`; `Vue.watch(state, save, { deep: true })` โดย save ผ่าน `setTimeout` 300ms (debounce)
+  - `AppState.state` — `Vue.reactive(Domain.parseSaved(localStorage.getItem('stockpro-mock-v2')) ?? Seed.build())`; `Vue.watch(state, save, { deep: true })` โดย save ผ่าน `setTimeout` 300ms (debounce)
   - `AppState.act(fn: (state, user) => T, successMsg?: string | ((T) => string)) -> T | undefined` — เรียก fn; จับ `DomainError` → toast แดง `life: 6000` ข้อความ = `err.message` แล้ว return undefined; สำเร็จ → toast เขียว 3000ms ถ้ามี successMsg (ทุกหน้าเรียก domain ผ่าน `act` เท่านั้น)
   - `AppState.reset()` — เขียน seed ใหม่ทับ (ยืนยันด้วย ConfirmDialog ก่อน)
   - `AppState.user` (computed) · `AppState.setRole(role)` (สลับ `currentUserId` ไปผู้ใช้บทบาทนั้น)
@@ -532,7 +532,7 @@ Layout (เทียบ `docs/reference/issue-page-target.webp`):
 
 - [ ] **Step 1: สร้างไฟล์ตาม Interfaces** — ลำดับ `<script>` ใน index.html: tailwind → vue → primevue → aura → domain.js → seed.js → state.js → ui.js → pages/*.js → app.js · `app.css` ใส่ฟอนต์, `tabular-nums` บน `.num`, ขนาดขั้นต่ำ, และ `@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }`
 - [ ] **Step 2: เปิดในเบราว์เซอร์** — เปิด `file:///…/mockup/index.html` (built-in browser `navigate`) · Expected: console ไม่มี error, เห็น sidebar/topbar ตามรูป, `#/` แสดง placeholder หน้าแรก
-- [ ] **Step 3: ตรวจ state** — สลับบทบาทเป็น Store → ชื่อในการ์ดเปลี่ยนเป็น "ก้องภพ แสงทอง"; reload แล้วยังเป็น Store; `localStorage.setItem('stockpro-mock-v1','{bad')` แล้ว reload → แอปขึ้นด้วย seed (Review Focus 4); เปิดโหมดมืด → พื้นเปลี่ยน ตัวอักษรอ่านได้
+- [ ] **Step 3: ตรวจ state** — สลับบทบาทเป็น Store → ชื่อในการ์ดเปลี่ยนเป็น "ก้องภพ แสงทอง"; reload แล้วยังเป็น Store; `localStorage.setItem('stockpro-mock-v2','{bad')` แล้ว reload → แอปขึ้นด้วย seed (Review Focus 4); เปิดโหมดมืด → พื้นเปลี่ยน ตัวอักษรอ่านได้
 - [ ] **Step 4: ตรวจ 390px** — `resize_window` mobile → ไม่มี scroll แนวนอน (`document.documentElement.scrollWidth <= 390`), sidebar อยู่ใน drawer
 - [ ] **Step 5: Commit** — `git add mockup && git commit -m "feat(ui): app shell, router, persistent state, role switcher"`
 

@@ -1,22 +1,26 @@
 // สถานะแอป (persist ลง localStorage), router แบบ hash, และ act() สำหรับเรียก Domain
 (function () {
   const { reactive, computed, watch, ref } = Vue;
-  const KEY = 'stockpro-mock-v1';
+  const KEY = 'stockpro-mock-v2'; // v2: ข้อมูล v1 เก่ายังไม่มีรูปหมวด — เริ่มจาก seed ใหม่
   window.Pages = {};
 
   function load() {
-    try { return Domain.parseSaved(localStorage.getItem(KEY)); } catch (e) { return null; }
+    try { localStorage.removeItem('stockpro-mock-v1'); return Domain.parseSaved(localStorage.getItem(KEY)); } catch (e) { return null; }
   }
   const state = reactive(load() ?? Seed.build());
   if (!state.ui) state.ui = { dark: false };
 
-  let timer;
-  watch(state, () => {
+  // บันทึกหลัง act() สำเร็จ + เมื่อส่วนที่แก้ตรง ๆ เปลี่ยน (ตะกร้า ตั้งค่า โหมดมืด บทบาท)
+  // ไม่ deep-watch ทั้ง state — เดินทั้งก้อน ~40ms ทุกครั้งที่กดเพิ่ม/ลดจำนวน
+  let timer = null;
+  function save() {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.warn('บันทึก localStorage ไม่ได้', e); }
-    }, 300);
-  }, { deep: true });
+    timer = null;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.warn('บันทึก localStorage ไม่ได้', e); }
+  }
+  const saveSoon = () => { clearTimeout(timer); timer = setTimeout(save, 300); };
+  watch(() => [state.cart, state.settings, state.ui, state.currentUserId], saveSoon, { deep: true });
+  window.addEventListener('pagehide', () => { if (timer) save(); });
 
   const user = computed(() => Domain.currentUser(state));
 
@@ -34,6 +38,7 @@
       toast('error', 'เกิดข้อผิดพลาดที่ไม่คาดคิด ลองใหม่หรือรีเซ็ตข้อมูลตัวอย่าง', 6000);
       throw err;
     }
+    saveSoon();
     if (successMsg) toast('success', typeof successMsg === 'function' ? successMsg(result) : successMsg, 3000);
     return result;
   }
@@ -51,6 +56,7 @@
         for (const k of Object.keys(state)) delete state[k];
         Object.assign(state, Seed.build(), { ui });
         resetCount.value++;
+        saveSoon();
         toast('success', 'รีเซ็ตข้อมูลตัวอย่างแล้ว', 3000);
       },
     });
