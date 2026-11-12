@@ -74,6 +74,20 @@
     </button>`,
   };
 
+  // KPI 4 ใบ (หน้าแรก + หน้าเบิก) — low/out ส่ง @tab ให้หน้าเจ้าของจัดการ ที่เหลือพาไปหน้าที่เกี่ยวข้อง
+  const KpiRow = {
+    props: { whId: String },
+    emits: ['tab'],
+    computed: { kpi() { return Domain.kpis(S(), this.whId); } },
+    methods: { go: (n) => AppState.go(n) },
+    template: `<div class="kpi-row">
+      <kpi-card icon="pi-exclamation-triangle" tone="red" title="ของใกล้หมด" :value="kpi.low" unit="รายการ" caption="คงเหลือน้อยกว่าจุดสั่งซื้อ" @click="$emit('tab', 'low')" />
+      <kpi-card icon="pi-box" tone="red" title="ไม่มีของ" :value="kpi.out" unit="รายการ" caption="ของหมด ต้องรอรับเข้า" @click="$emit('tab', 'out')" />
+      <kpi-card icon="pi-file-check" tone="green" title="รออนุมัติ" :value="kpi.pendingApprovals" unit="ใบเบิก" caption="รอผู้มีอำนาจอนุมัติ" @click="go('approvals')" />
+      <kpi-card icon="pi-truck" tone="orange" title="รอของเข้า" :value="kpi.openPRs" unit="รายการ" caption="ระหว่างจัดส่งเข้าคลัง" @click="go('receive')" />
+    </div>`,
+  };
+
   const PageHeader = {
     props: { icon: String, title: String, subtitle: String },
     template: `<header class="page-header">
@@ -100,6 +114,7 @@
       app.component('product-thumb', ProductThumb);
       app.component('status-tag', StatusTag);
       app.component('kpi-card', KpiCard);
+      app.component('kpi-row', KpiRow);
       app.component('page-header', PageHeader);
       app.component('qty', Qty);
       app.component('doc-id', DocId);

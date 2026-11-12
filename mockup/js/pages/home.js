@@ -1,0 +1,88 @@
+// หน้าแรก: KPI · ทางลัด · ความเคลื่อนไหวล่าสุด (docs ทุกชนิด) + dialog รายละเอียดบรรทัด
+(function () {
+  const { ref, computed } = Vue;
+  const { state, user, go } = AppState;
+
+  const TYPE = { issue: ['เบิก', 'warn'], receive: ['รับ', 'info'], adjust: ['ปรับยอด', 'secondary'] };
+  // [ข้อความ, tone] — ข้อความเสมอ ไม่พึ่งสีอย่างเดียว
+  const STATUS = {
+    issue: { posted: ['จ่ายแล้ว', 'tone-green'], pending: ['รออนุมัติ', 'tone-orange'], rejected: ['ไม่อนุมัติ', 'tone-red'] },
+    receive: { posted: ['รับแล้ว', 'tone-green'], pending: ['รอยืนยัน', 'tone-orange'], rejected: ['ไม่มีของ', 'tone-red'] },
+    adjust: { posted: ['ปรับยอดแล้ว', 'tone-blue'] },
+  };
+  const SHORTCUTS = [
+    { label: 'เบิกของ', icon: 'pi-shopping-cart', to: ['issue'] },
+    { label: 'รับของเข้า', icon: 'pi-download', to: ['receive'] },
+    { label: 'ตรวจนับ', icon: 'pi-list-check', to: ['count'] },
+    { label: 'เพิ่มวัสดุ', icon: 'pi-plus', to: ['products', { new: '1' }] },
+  ];
+
+  window.Pages.home = {
+    setup() {
+      const byId = computed(() => new Map(state.products.map((p) => [p.id, p])));
+      const nameOf = (id) => state.users.find((u) => u.id === id)?.name || id || '-';
+      const whName = (id) => state.warehouses.find((w) => w.id === id)?.name || '-';
+      const jobName = (id) => { const j = state.jobs.find((x) => x.id === id); return j ? `${j.id} ${j.name}` : '-'; };
+      const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+      const rows = computed(() => [...state.docs].sort((a, b) => b.at.localeCompare(a.at)).map((d) => ({
+        d, type: TYPE[d.type] || [d.type, 'secondary'], status: (STATUS[d.type] || {})[d.status] || [d.status, 'tone-gray'],
+      })));
+      const first = ref(0);
+      const sel = ref(null);
+      const selLines = computed(() => sel.value && sel.value.lines.map((l) => ({ l, p: byId.value.get(l.productId) })));
+      return { user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, when, go, Domain };
+    },
+    template: `<div class="home-page">
+      <page-header icon="pi-home" title="หน้าแรก" :subtitle="'สวัสดี ' + user.name" />
+      <kpi-row wh-id="W-BN" @tab="go('issue')" />
+
+      <section class="card home-card" aria-labelledby="sc-h">
+        <h2 id="sc-h" class="home-h">ทางลัด</h2>
+        <div class="shortcuts">
+          <button v-for="s in SHORTCUTS" :key="s.label" type="button" class="shortcut" @click="go(...s.to)">
+            <span class="shortcut-icon"><i :class="['pi', s.icon]" aria-hidden="true"></i></span>{{ s.label }}
+          </button>
+        </div>
+      </section>
+
+      <section class="card home-card" aria-labelledby="led-h">
+        <h2 id="led-h" class="home-h">ความเคลื่อนไหวล่าสุด</h2>
+        <p-datatable :value="rows" dataKey="d.id" paginator :rows="10" v-model:first="first" class="ledger" rowHover
+          @row-click="sel = $event.data.d">
+          <p-column header="เวลา" bodyClass="col-when"><template #body="{ data }"><span class="num">{{ when(data.d.at) }}</span></template></p-column>
+          <p-column header="เลขที่">
+            <template #body="{ data }">
+              <button type="button" class="doc-link" :aria-label="'ดูรายละเอียด ' + data.d.id" @click.stop="sel = data.d"><doc-id :id="data.d.id" /></button>
+            </template>
+          </p-column>
+          <p-column header="ประเภท"><template #body="{ data }"><p-tag :value="data.type[0]" :severity="data.type[1]" /></template></p-column>
+          <p-column header="คลัง"><template #body="{ data }">{{ whName(data.d.whId) }}</template></p-column>
+          <p-column header="งาน"><template #body="{ data }">{{ data.d.jobId ? jobName(data.d.jobId) : '-' }}</template></p-column>
+          <p-column header="รายการ" headerClass="col-num" bodyClass="col-num"><template #body="{ data }"><span class="num">{{ data.d.lines.length }}</span></template></p-column>
+          <p-column header="โดย"><template #body="{ data }">{{ nameOf(data.d.by) }}</template></p-column>
+          <p-column header="สถานะ">
+            <template #body="{ data }"><span class="status-tag" :class="data.status[1]"><span class="dot" aria-hidden="true"></span>{{ data.status[0] }}</span></template>
+          </p-column>
+          <template #empty><p class="muted">ยังไม่มีความเคลื่อนไหว</p></template>
+        </p-datatable>
+      </section>
+
+      <p-dialog :visible="!!sel" @update:visible="sel = null" :header="sel ? 'เอกสาร ' + sel.id : ''" modal dismissableMask class="doc-dialog" :draggable="false">
+        <template v-if="sel">
+          <p class="muted doc-meta">{{ when(sel.at) }} · {{ whName(sel.whId) }}<template v-if="sel.jobId"> · งาน {{ jobName(sel.jobId) }}</template> · โดย {{ nameOf(sel.by) }}</p>
+          <p v-if="sel.note" class="doc-note">หมายเหตุ: {{ sel.note }}</p>
+          <ul class="doc-lines">
+            <li v-for="x in selLines" :key="x.l.productId">
+              <span class="doc-line-name">{{ x.p ? x.p.name : x.l.productId }}</span>
+              <span class="doc-line-qty">
+                <template v-if="sel.type === 'issue' && sel.status === 'posted' && x.l.issued != null && x.l.issued !== x.l.qty">จ่าย <span class="num">{{ Domain.formatQty(x.l.issued) }}</span> จาก </template>
+                <qty :n="x.l.qty" :unit="x.p && x.p.unit" />
+              </span>
+            </li>
+          </ul>
+        </template>
+        <template #footer><p-button label="ปิด" severity="secondary" outlined @click="sel = null" /></template>
+      </p-dialog>
+    </div>`,
+  };
+})();

@@ -58,7 +58,6 @@
       const filterPop = ref();
       const filterCount = computed(() => brands.value.length + (hideAdded.value ? 1 : 0));
 
-      const kpi = computed(() => Domain.kpis(state, cart.value.whId));
       const kpiTab = (t) => { tab.value = t; };
 
       // ---------- หมวดหมู่ ----------
@@ -187,7 +186,7 @@
 
       return {
         state, cart, Domain, fmt, whName, qInput, text, categoryId, tab, TABS, brands, hideAdded, first, rows, counts,
-        brandOptions, filterPop, filterCount, kpi, kpiTab, go, tops, selectedCat, stripActive, pickTop, catsOpen, catQuery,
+        brandOptions, filterPop, filterCount, kpiTab, go, tops, selectedCat, stripActive, pickTop, catsOpen, catQuery,
         catCounts, catGroups, pickCat, manageCats, rowWh, whOf, rowQty, rowStatus, setRowWh, whOptions, cartStatus, inCart,
         flashId, add, showInCart, detail, detailWh, detailPRs, addFromDetail, createOpen, onCreated, cartRows, totalQty, remove,
         clearAll, whOpts, jobOpts, jobOpen, jobSelect, jobForm, similarJobs, openJob, useJob, saveJob, needsApproval,
@@ -197,12 +196,7 @@
     template: `<div class="issue-page">
       <page-header icon="pi-shopping-cart" title="เบิกของ" subtitle="เลือกวัสดุจากคลังเพื่อเบิกไปใช้ในหน้างาน พร้อมตรวจสอบจำนวนคงเหลือแบบเรียลไทม์" />
 
-      <div class="kpi-row">
-        <kpi-card icon="pi-exclamation-triangle" tone="red" title="ของใกล้หมด" :value="kpi.low" unit="รายการ" caption="คงเหลือน้อยกว่าจุดสั่งซื้อ" @click="kpiTab('low')" />
-        <kpi-card icon="pi-box" tone="red" title="ไม่มีของ" :value="kpi.out" unit="รายการ" caption="ของหมด ต้องรอรับเข้า" @click="kpiTab('out')" />
-        <kpi-card icon="pi-file-check" tone="green" title="รออนุมัติ" :value="kpi.pendingApprovals" unit="ใบเบิก" caption="รอผู้มีอำนาจอนุมัติ" @click="go('approvals')" />
-        <kpi-card icon="pi-truck" tone="orange" title="รอของเข้า" :value="kpi.openPRs" unit="รายการ" caption="ระหว่างจัดส่งเข้าคลัง" @click="go('receive')" />
-      </div>
+      <kpi-row :wh-id="cart.whId" @tab="kpiTab" />
 
       <div class="issue-layout">
         <div class="issue-main">
