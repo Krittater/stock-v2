@@ -121,7 +121,7 @@
         <div class="field">
           <label for="pd-rp">จุดสั่งซื้อ</label>
           <p-inputnumber inputId="pd-rp" v-model="f.reorderPoint" :min="0" :maxFractionDigits="unit === 'เมตร' ? 2 : 0" placeholder="0" fluid />
-          <small class="muted">เตือนเมื่อเหลือน้อยกว่า</small>
+          <small class="muted pd-hint">เตือนเมื่อเหลือน้อยกว่า</small>
         </div>
         <label class="switch-row pd-switch">
           <span>มีของนี้อยู่ในคลังแล้ว</span>

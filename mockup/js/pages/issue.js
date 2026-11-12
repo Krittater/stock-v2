@@ -21,7 +21,7 @@
   window.Pages.issue = {
     components: { ProductDialog: window.ProductDialog },
     setup() {
-      const cart = state.cart;
+      const cart = computed(() => state.cart); // อ่านสดเสมอ — reset() แทน state.cart ด้วยออบเจกต์ใหม่
       const byId = computed(() => new Map(state.products.map((p) => [p.id, p])));
       const whName = (id) => state.warehouses.find((w) => w.id === id)?.name || '-';
 
@@ -40,12 +40,12 @@
       const first = ref(0);
       watch([text, categoryId, tab, brands, hideAdded], () => { first.value = 0; });
 
-      const inCart = computed(() => new Set(cart.lines.map((l) => l.productId)));
+      const inCart = computed(() => new Set(cart.value.lines.map((l) => l.productId)));
       const base = computed(() => {
-        let list = Domain.searchProducts(state, { text: text.value, categoryId: categoryId.value, whId: cart.whId });
+        let list = Domain.searchProducts(state, { text: text.value, categoryId: categoryId.value, whId: cart.value.whId });
         if (brands.value.length) list = list.filter((p) => brands.value.includes(p.brand));
         if (hideAdded.value) list = list.filter((p) => !inCart.value.has(p.id));
-        return list.map((p) => [p, Domain.stockStatus(state, p, cart.whId)]);
+        return list.map((p) => [p, Domain.stockStatus(state, p, cart.value.whId)]);
       });
       const counts = computed(() => {
         const c = { all: base.value.length, in: 0, low: 0, out: 0 };
@@ -58,7 +58,7 @@
       const filterPop = ref();
       const filterCount = computed(() => brands.value.length + (hideAdded.value ? 1 : 0));
 
-      const kpi = computed(() => Domain.kpis(state, cart.whId));
+      const kpi = computed(() => Domain.kpis(state, cart.value.whId));
       const kpiTab = (t) => { tab.value = t; };
 
       // ---------- หมวดหมู่ ----------
@@ -83,19 +83,19 @@
 
       // ---------- แถวในตาราง ----------
       const rowWh = reactive({}); // คลังที่ดูต่อแถว (ไม่ persist) — ไม่ได้เลือก = คลังของใบเบิก
-      const whOf = (p) => rowWh[p.id] || cart.whId;
+      const whOf = (p) => rowWh[p.id] || cart.value.whId;
       const rowQty = (p) => Domain.qtyOf(state, p.id, whOf(p));
       const rowStatus = (p) => Domain.stockStatus(state, p, whOf(p));
-      const setRowWh = (p, id) => { rowWh[p.id] = id === cart.whId ? undefined : id; };
+      const setRowWh = (p, id) => { rowWh[p.id] = id === cart.value.whId ? undefined : id; };
       const whOptions = (p) => state.warehouses.map((w) => ({ id: w.id, label: `${w.name} · ${fmt(Domain.qtyOf(state, p.id, w.id), p.unit)}` }));
-      const cartStatus = (p) => Domain.stockStatus(state, p, cart.whId);
+      const cartStatus = (p) => Domain.stockStatus(state, p, cart.value.whId);
 
       const flashId = ref(null);
       let flashTimer;
       const lineEl = (id) => document.querySelector(`[data-cart-line="${id}"]`);
       const flash = (id) => { flashId.value = id; clearTimeout(flashTimer); flashTimer = setTimeout(() => { flashId.value = null; }, 2000); };
       onBeforeUnmount(() => clearTimeout(flashTimer));
-      const add = (p) => { if (!inCart.value.has(p.id)) cart.lines.push({ productId: p.id, qty: 1 }); flash(p.id); };
+      const add = (p) => { if (!inCart.value.has(p.id)) cart.value.lines.push({ productId: p.id, qty: 1 }); flash(p.id); };
       const showInCart = async (p) => {
         await nextTick();
         lineEl(p.id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -111,7 +111,7 @@
 
       const createOpen = ref(false);
       const onCreated = async (p, { existing, receipt }) => {
-        if (!inCart.value.has(p.id)) cart.lines.push({ productId: p.id, qty: 1 });
+        if (!inCart.value.has(p.id)) cart.value.lines.push({ productId: p.id, qty: 1 });
         let msg = existing ? `เลือก ${p.name} (${p.id}) แล้ว` : `สร้างแล้ว: ${p.name} (${p.id}) เลือกให้แล้ว`;
         if (receipt) {
           const q = fmt(receipt.lines[0].qty, p.unit);
@@ -125,24 +125,24 @@
       };
 
       // ---------- ตะกร้า ----------
-      const cartRows = computed(() => cart.lines.map((l) => {
+      const cartRows = computed(() => cart.value.lines.map((l) => {
         const p = byId.value.get(l.productId);
-        const have = Domain.qtyOf(state, l.productId, cart.whId);
+        const have = Domain.qtyOf(state, l.productId, cart.value.whId);
         return { l, p, have, short: l.qty > have ? +(l.qty - have).toFixed(2) : 0 };
       }).filter((r) => r.p));
-      const totalQty = computed(() => cart.lines.reduce((s, l) => s + (l.qty || 0), 0));
-      const remove = (id) => { const i = cart.lines.findIndex((l) => l.productId === id); if (i >= 0) cart.lines.splice(i, 1); };
+      const totalQty = computed(() => cart.value.lines.reduce((s, l) => s + (l.qty || 0), 0));
+      const remove = (id) => { const i = cart.value.lines.findIndex((l) => l.productId === id); if (i >= 0) cart.value.lines.splice(i, 1); };
       const clearAll = () => services.confirm.require({
         header: 'ล้างรายการเบิก',
-        message: `ลบของทั้ง ${cart.lines.length} รายการออกจากใบเบิกนี้หรือไม่?`,
+        message: `ลบของทั้ง ${cart.value.lines.length} รายการออกจากใบเบิกนี้หรือไม่?`,
         icon: 'pi pi-trash',
         rejectProps: { label: 'ยกเลิก', severity: 'secondary', outlined: true },
         acceptProps: { label: 'ล้างทั้งหมด', severity: 'danger' },
-        accept: () => { cart.lines.splice(0); },
+        accept: () => { cart.value.lines.splice(0); },
       });
 
-      const whOpts = computed(() => Domain.warehouseOptions(state, cart.lines.filter((l) => l.qty > 0))
-        .map((o) => ({ id: o.wh.id, name: o.wh.name, disabled: o.short === 'counting', badge: cart.lines.length || o.short === 'counting' ? WH_BADGE[o.short](o) : null })));
+      const whOpts = computed(() => Domain.warehouseOptions(state, cart.value.lines.filter((l) => l.qty > 0))
+        .map((o) => ({ id: o.wh.id, name: o.wh.name, disabled: o.short === 'counting', badge: cart.value.lines.length || o.short === 'counting' ? WH_BADGE[o.short](o) : null })));
       const jobOpts = computed(() => state.jobs.filter((j) => j.open).map((j) => ({ id: j.id, label: `${j.id} – ${j.name}` })));
       const jobLabel = (id) => jobOpts.value.find((j) => j.id === id)?.label;
 
@@ -151,7 +151,7 @@
       const jobForm = reactive({ name: '', customer: '' });
       const similarJobs = computed(() => Domain.similarJobs(state, jobForm.name));
       const openJob = () => { jobSelect.value?.hide(); Object.assign(jobForm, { name: '', customer: '' }); jobOpen.value = true; };
-      const useJob = (j) => { cart.jobId = j.id; jobOpen.value = false; };
+      const useJob = (j) => { cart.value.jobId = j.id; jobOpen.value = false; };
       const saveJob = () => {
         const j = act((s) => Domain.addJob(s, { ...jobForm }), (x) => `สร้างงาน ${x.id} ${x.name} แล้ว`);
         if (j) useJob(j);
@@ -160,11 +160,11 @@
       const needsApproval = computed(() => Domain.needsApproval(state, user.value));
       const blockers = computed(() => {
         const b = [];
-        if (!cart.lines.length) b.push('เพิ่มของอย่างน้อย 1 รายการ');
-        else if (cart.lines.some((l) => !(l.qty > 0))) b.push('ใส่จำนวนให้ครบทุกรายการ');
-        if (!cart.whId) b.push('เลือกคลังที่เบิกของ');
-        else if (state.warehouses.find((w) => w.id === cart.whId)?.countId) b.push('คลังนี้กำลังตรวจนับ เลือกคลังอื่น');
-        if (!jobLabel(cart.jobId)) b.push('เลือกงาน / โครงการ');
+        if (!cart.value.lines.length) b.push('เพิ่มของอย่างน้อย 1 รายการ');
+        else if (cart.value.lines.some((l) => !(l.qty > 0))) b.push('ใส่จำนวนให้ครบทุกรายการ');
+        if (!cart.value.whId) b.push('เลือกคลังที่เบิกของ');
+        else if (state.warehouses.find((w) => w.id === cart.value.whId)?.countId) b.push('คลังนี้กำลังตรวจนับ เลือกคลังอื่น');
+        if (!jobLabel(cart.value.jobId)) b.push('เลือกงาน / โครงการ');
         return b;
       });
 
@@ -174,10 +174,10 @@
         if (busy.value || blockers.value.length) return;
         busy.value = true;
         setTimeout(() => { // กันกดซ้ำ + ให้เห็นว่ากำลังส่ง
-          const input = { whId: cart.whId, jobId: cart.jobId, note: (cart.note || '').trim(), lines: cart.lines.map((l) => ({ productId: l.productId, qty: l.qty })) };
+          const input = { whId: cart.value.whId, jobId: cart.value.jobId, note: (cart.value.note || '').trim(), lines: cart.value.lines.map((l) => ({ productId: l.productId, qty: l.qty })) };
           const r = act((s, u) => Domain.issue(s, input, u));
           busy.value = false;
-          if (r) { result.value = r; cart.lines.splice(0); cart.note = ''; } // "เบิกต่อ" = ล้างบรรทัด+หมายเหตุ เก็บคลังและงาน
+          if (r) { result.value = r; cart.value.lines.splice(0); cart.value.note = ''; } // "เบิกต่อ" = ล้างบรรทัด+หมายเหตุ เก็บคลังและงาน
         }, 600);
       };
       const resultView = computed(() => {

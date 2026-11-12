@@ -249,7 +249,7 @@ body {
 .cat-chip-row { margin: -2px 0 10px; }
 .cat-chip { display: inline-flex; align-items: center; gap: 4px; padding-left: 12px; border-radius: 999px; font-size: 14px;
   background: var(--nav-active-bg); color: var(--nav-active-fg); font-weight: 600; }
-.cat-chip button { width: 36px; height: 36px; border: 0; background: transparent; color: inherit; cursor: pointer; border-radius: 50%; }
+.cat-chip button { width: 44px; height: 44px; border: 0; background: transparent; color: inherit; cursor: pointer; border-radius: 50%; }
 .filter-pop { width: 300px; max-width: calc(100vw - 48px); display: flex; flex-direction: column; gap: 10px; }
 
 .issue-page .issue-table .p-datatable-thead > tr > th { background: var(--p-surface-100); color: var(--app-muted); font-size: 14px; font-weight: 500;
@@ -289,7 +289,7 @@ body {
 .cart-head h2 { display: flex; align-items: center; gap: 10px; }
 .cart-head h2 .pi { color: var(--p-primary-600); font-size: 20px; }
 .cart-empty { margin: 16px 0; font-size: 15px; }
-.cart-line { display: grid; grid-template-columns: 48px minmax(0, 1fr) 36px; gap: 12px; align-items: center; padding: 10px 4px; margin: 0 -4px;
+.cart-line { display: grid; grid-template-columns: 48px minmax(0, 1fr) 44px; gap: 12px; align-items: center; padding: 10px 4px; margin: 0 -4px;
   border-bottom: 1px solid var(--app-border); border-radius: 8px; transition: background-color .3s; }
 .cart-line.flash { background: var(--nav-active-bg); }
 .cart-line-name { font-weight: 600; font-size: 15px; line-height: 1.35; }
@@ -297,10 +297,10 @@ body {
 .cart-short { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #c2410c; margin-top: 2px; }
 .app-dark .cart-short { color: #fdba74; }
 .cart-short .pi { font-size: 13px; }
-.issue-page .qty-input { width: 128px; flex: none; }
+.issue-page .qty-input { width: 144px; flex: none; }
 .issue-page .qty-input .p-inputnumber-input { width: 100%; min-width: 0; text-align: center; padding: 0 2px; border-radius: 0; }
-.issue-page .qty-input .p-inputnumber-button { width: 40px; flex: none; background: transparent; }
-.line-remove { width: 36px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--app-muted); cursor: pointer; }
+.issue-page .qty-input .p-inputnumber-button { width: 44px; min-height: 44px; flex: none; background: transparent; }
+.line-remove { width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--app-muted); cursor: pointer; }
 .line-remove:hover { background: var(--nav-hover-bg); color: #dc2626; }
 .cart-sum { display: flex; justify-content: space-between; align-items: center; margin: 14px 0; padding: 14px 12px; border-radius: 10px;
   background: var(--p-surface-100); font-size: 15px; }
@@ -358,6 +358,7 @@ body {
 .pd-switch { border-top: 1px solid var(--app-border); padding-top: 6px; font-weight: 500; }
 .pd-stock { margin-top: 8px; padding: 12px; border-radius: 10px; background: var(--p-surface-50); }
 .app-dark .pd-stock { background: var(--p-surface-800); }
+.pd-hint { font-size: 14px; }
 .pd-note { display: flex; gap: 6px; align-items: baseline; margin: 0; font-size: 14px; color: var(--app-muted); }
 .pd-footer { width: 100%; }
 .pd-missing { margin: 0 0 8px; font-size: 14px; color: var(--app-muted); text-align: right; }

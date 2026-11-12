@@ -1,6 +1,6 @@
 // สถานะแอป (persist ลง localStorage), router แบบ hash, และ act() สำหรับเรียก Domain
 (function () {
-  const { reactive, computed, watch } = Vue;
+  const { reactive, computed, watch, ref } = Vue;
   const KEY = 'stockpro-mock-v1';
   window.Pages = {};
 
@@ -38,6 +38,7 @@
     return result;
   }
 
+  const resetCount = ref(0); // app.js ใช้เป็น key ของหน้า — reset แล้วหน้าเมานต์ใหม่ ไม่ถือออบเจกต์เก่าค้าง
   function reset() {
     services.confirm.require({
       header: 'รีเซ็ตข้อมูลตัวอย่าง',
@@ -49,6 +50,7 @@
         const ui = { ...state.ui };
         for (const k of Object.keys(state)) delete state[k];
         Object.assign(state, Seed.build(), { ui });
+        resetCount.value++;
         toast('success', 'รีเซ็ตข้อมูลตัวอย่างแล้ว', 3000);
       },
     });
@@ -72,5 +74,5 @@
     location.hash = '#/' + name + (qs ? '?' + qs : '');
   }
 
-  window.AppState = { state, user, act, reset, setRole, route, go, services };
+  window.AppState = { state, user, act, reset, resetCount, setRole, route, go, services };
 })();

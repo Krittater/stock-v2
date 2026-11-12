@@ -1,7 +1,7 @@
 // โครงแอป: sidebar, topbar, router outlet, ธีม — mount ท้ายไฟล์
 (function () {
   const { computed, ref, watch, watchEffect, onMounted, onBeforeUnmount } = Vue;
-  const { state, user, route, go, setRole, reset } = AppState;
+  const { state, user, route, go, setRole, reset, resetCount } = AppState;
 
   const NAV = [
     { name: 'home', label: 'หน้าแรก', icon: 'pi-home' },
@@ -159,14 +159,14 @@
       watch(() => route.name + JSON.stringify(route.query), () => { drawer.value = false; });
       watchEffect(() => document.documentElement.classList.toggle('app-dark', !!state.ui.dark));
       const page = computed(() => window.Pages[route.name] || Placeholder);
-      return { drawer, page, route, creditsOpen, credits };
+      return { drawer, page, route, resetCount, creditsOpen, credits };
     },
     template: `<div class="shell">
       <aside class="sidebar-fixed"><app-sidebar /></aside>
       <p-drawer v-model:visible="drawer" header="เมนู" class="app-drawer"><app-sidebar /></p-drawer>
       <div class="main">
         <app-topbar @menu="drawer = true" />
-        <main class="content"><component :is="page" :key="route.name" /></main>
+        <main class="content"><component :is="page" :key="route.name + ':' + resetCount" /></main>
       </div>
       <p-dialog v-model:visible="creditsOpen" header="เครดิตรูปภาพ" modal dismissableMask class="credits-dialog">
         <p class="muted credits-note">รูปถ่ายจาก Wikimedia Commons (ย่อขนาด/ครอป/แปลงไฟล์จากต้นฉบับ) ใช้ตามสัญญาอนุญาตที่ระบุ · รูปวาดทำขึ้นเองสำหรับ mockup นี้</p>
