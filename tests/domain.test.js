@@ -172,7 +172,6 @@ test('addProduct validation', () => {
   assert.throws(() => D.addProduct(s, { name: '', unit: '', categoryId: cat }, head), { code: 'prod_required' });
   assert.throws(() => D.addProduct(s, { name: 'x', unit: 'ตัว', categoryId: 'nope' }, head), { code: 'cat_required' });
   assert.throws(() => D.addProduct(s, { name: 'สายไฟ thw 1.5 SQ.MM สีดำ', unit: 'เมตร', categoryId: cat }, head), { code: 'prod_dup' });
-  assert.throws(() => D.addProduct(s, { name: 'y', unit: 'ตัว', categoryId: cat, initial: { whId: 'W-BN', qty: 1 } }, head), { code: 'initial_unsupported' });
   const { product, receipt } = D.addProduct(s, { name: 'น็อตสแตนเลส M8', unit: 'ตัว', categoryId: cat }, head);
   assert.equal(product.id, 'P-0051'); assert.equal(product.code, 'P-0051'); assert.equal(receipt, null);
   assert.equal(product.reorderPoint, 0); assert.equal(product.image, null); assert.ok(s.products.includes(product));
@@ -182,4 +181,53 @@ test('addProduct validation', () => {
   assert.equal(D.updateProduct(s, product.id, { brand: 'B', id: 'X' }).id, 'P-0051');
   assert.throws(() => D.updateProduct(s, product.id, { name: 'สายไฟ thw 1.5 SQ.MM สีดำ' }), { code: 'prod_dup' });
   assert.doesNotThrow(() => D.updateProduct(s, product.id, { name: 'น็อตสแตนเลส M8' }));
+});
+
+test('store receive adds stock and closes PR', () => {
+  const s = Seed.build({ products: 50 }); const store = s.users.find(u => u.role === 'store');
+  const pr = s.prs.find(p => p.status === 'open');
+  const before = D.qtyOf(s, pr.productId, pr.whId);
+  const d = D.receive(s, { whId: pr.whId, lines: [{ productId: pr.productId, qty: pr.qty, prId: pr.id }] }, store);
+  assert.match(d.id, /^RC-69\d{4}$/); assert.equal(d.status, 'posted');
+  assert.equal(D.qtyOf(s, pr.productId, pr.whId), before + pr.qty);
+  assert.equal(pr.status, 'done');
+});
+test('engineer receive waits for Store', () => {
+  const s = Seed.build({ products: 50 }); const eng = s.users.find(u => u.role === 'engineer');
+  const store = s.users.find(u => u.role === 'store');
+  const d = D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 5 }] }, eng);
+  assert.equal(d.status, 'pending'); assert.equal(D.qtyOf(s, 'P-0002', 'W-BN'), 342);
+  assert.throws(() => D.confirmReceipt(s, d.id, eng, true), { code: 'forbidden' });
+  D.confirmReceipt(s, d.id, store, true); assert.equal(D.qtyOf(s, 'P-0002', 'W-BN'), 347);
+});
+test('receive into counting warehouse is refused', () => {
+  const s = Seed.build({ products: 50 }); s.warehouses[0].countId = 'CC-0001';
+  assert.throws(() => D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 1 }] }, s.users[2]), { code: 'wh_counting' });
+});
+test('new product with initial stock: role decides', () => {
+  const s = Seed.build({ products: 50 }); const cat = s.categories.find(c => c.parentId).id;
+  const eng = s.users.find(u => u.role === 'engineer'); const head = s.users.find(u => u.role === 'head');
+  const a = D.addProduct(s, { name: 'ก้ามปู 1/2 นิ้ว', unit: 'ตัว', categoryId: cat, initial: { whId: 'W-BN', qty: 100 } }, head);
+  assert.equal(a.receipt.status, 'posted'); assert.equal(D.qtyOf(s, a.product.id, 'W-BN'), 100);
+  const b = D.addProduct(s, { name: 'ก้ามปู 3/4 นิ้ว', unit: 'ตัว', categoryId: cat, initial: { whId: 'W-BN', qty: 100 } }, eng);
+  assert.equal(b.receipt.status, 'pending'); assert.equal(D.qtyOf(s, b.product.id, 'W-BN'), 0);
+});
+test('receive validation, reject, pending PR applied on confirm, bad initial leaves no product', () => {
+  const s = Seed.build({ products: 50 }); const [eng, store] = s.users; const cat = s.categories.find(c => c.parentId).id;
+  assert.throws(() => D.receive(s, { whId: 'W-BN', lines: [] }, store), { code: 'lines_empty' });
+  assert.throws(() => D.receive(s, { whId: 'W-BN', lines: [{ productId: 'nope', qty: 1 }] }, store), { code: 'prod_missing' });
+  assert.throws(() => D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 1.5 }] }, store), { code: 'qty_integer' });
+  assert.throws(() => D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 1, prId: 'PR-x' }] }, store), { code: 'pr_mismatch' });
+  const pr = s.prs.find(p => p.status === 'open');
+  const d = D.receive(s, { whId: pr.whId, lines: [{ productId: pr.productId, qty: pr.qty, prId: pr.id }] }, eng);
+  assert.equal(pr.status, 'open'); assert.equal(pr.received, 0);
+  assert.ok(D.openPRs(s, pr.whId).includes(pr));
+  D.confirmReceipt(s, d.id, store, true); assert.equal(pr.status, 'done');
+  assert.ok(!D.openPRs(s).includes(pr));
+  assert.throws(() => D.confirmReceipt(s, d.id, store, true), { code: 'doc_not_pending' });
+  const e = D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 5 }] }, eng);
+  assert.equal(D.confirmReceipt(s, e.id, store, false).status, 'rejected'); assert.equal(D.qtyOf(s, 'P-0002', 'W-BN'), 342);
+  const n = s.products.length;
+  assert.throws(() => D.addProduct(s, { name: 'ใหม่', unit: 'ตัว', categoryId: cat, initial: { whId: 'W-BN', qty: 0 } }, store), { code: 'qty_invalid' });
+  assert.equal(s.products.length, n);
 });

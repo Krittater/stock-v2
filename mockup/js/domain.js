@@ -233,7 +233,8 @@
 
   function addProduct(state, input, actor) {
     checkProduct(state, input, null);
-    if (input.initial) throw new DomainError('initial_unsupported', 'ยังลงยอดตั้งต้นไม่ได้');
+    const ini = input.initial;
+    if (ini) { assertWarehouseOpen(state, ini.whId); validateQty(ini.qty, input.unit); } // ตรวจก่อนสร้าง จะได้ไม่เหลือสินค้าครึ่งๆ กลางๆ
     const code = String(input.code ?? '').trim();
     if (code) checkCode(state, code, null);
     const id = nextId(state, 'P');
@@ -243,7 +244,56 @@
       image: input.image ?? null, createdAt: new Date().toISOString(),
     };
     state.products.push(product);
-    return { product, receipt: null };
+    const receipt = ini ? receive(state, { whId: ini.whId, lines: [{ productId: id, qty: ini.qty }] }, actor) : null;
+    return { product, receipt };
+  }
+
+  const openPRs = (state, whId) => state.prs.filter((r) => r.status === 'open' && (!whId || r.whId === whId));
+
+  function applyPR(state, pr, qty) {
+    pr.received += qty;
+    if (pr.received >= pr.qty) pr.status = 'done';
+  }
+
+  function postReceipt(state, doc) {
+    for (const l of doc.lines) {
+      const k = stockKey(l.productId, doc.whId);
+      state.stock[k] = (state.stock[k] || 0) + l.qty;
+      const pr = l.prId && state.prs.find((r) => r.id === l.prId);
+      if (pr) applyPR(state, pr, l.qty);
+    }
+  }
+
+  function receive(state, input, actor) {
+    const { whId, lines, note } = input;
+    if (!lines || !lines.length) throw new DomainError('lines_empty', 'เพิ่มของอย่างน้อย 1 รายการ');
+    assertWarehouseOpen(state, whId);
+    for (const l of lines) {
+      const p = state.products.find((x) => x.id === l.productId);
+      if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
+      validateQty(l.qty, p.unit);
+      if (l.prId) {
+        const pr = state.prs.find((r) => r.id === l.prId);
+        if (!pr || pr.productId !== l.productId || pr.whId !== whId)
+          throw new DomainError('pr_mismatch', 'รายการต้องซื้อไม่ตรงกับสินค้าหรือคลัง');
+      }
+    }
+    const doc = {
+      id: nextId(state, 'RC'), type: 'receive', status: actor.role === 'engineer' ? 'pending' : 'posted', whId,
+      lines: lines.map((l) => ({ ...l })), note: note ?? '', by: actor.id, at: new Date().toISOString(),
+    };
+    if (doc.status === 'posted') postReceipt(state, doc);
+    state.docs.push(doc);
+    return doc;
+  }
+
+  function confirmReceipt(state, docId, actor, accept) {
+    if (actor.role === 'engineer') throw new DomainError('forbidden', 'บัญชีนี้ยืนยันยอดไม่ได้ ให้ Store หรือหัวหน้ายืนยัน');
+    const doc = state.docs.find((d) => d.id === docId);
+    if (!doc || doc.type !== 'receive' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
+    if (accept) { assertWarehouseOpen(state, doc.whId); postReceipt(state, doc); }
+    doc.status = accept ? 'posted' : 'rejected';
+    return doc;
   }
 
   function updateProduct(state, id, patch) {
@@ -262,6 +312,7 @@
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
     addCategory, updateCategory, deleteCategory, productCounts, findSimilar, addProduct, updateProduct,
+    receive, confirmReceipt, openPRs,
   };
   root.Domain = Domain;
   if (typeof module !== 'undefined') module.exports = Domain;
