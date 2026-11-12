@@ -156,10 +156,112 @@
     }).sort((a, b) => RANK[a.short] - RANK[b.short] || a.i - b.i).map(({ i, ...o }) => o);
   }
 
+  const norm = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+  function checkCatName(state, name, parentId, selfId) {
+    const n = String(name ?? '').trim().replace(/\s+/g, ' ');
+    if (!n) throw new DomainError('cat_name', 'ใส่ชื่อหมวดก่อน');
+    if (state.categories.some((c) => c.id !== selfId && (c.parentId || null) === (parentId || null) && norm(c.name) === norm(n)))
+      throw new DomainError('cat_dup', `มีหมวด "${n}" อยู่แล้ว`);
+    return n;
+  }
+
+  function addCategory(state, { name, parentId = null, icon, color, image } = {}) {
+    if (parentId) {
+      const p = catOf(state, parentId);
+      if (!p || p.parentId) throw new DomainError('cat_depth', 'หมวดย่อยซ้อนได้ชั้นเดียว');
+    }
+    const n = checkCatName(state, name, parentId);
+    const order = Math.max(0, ...state.categories.filter((c) => (c.parentId || null) === (parentId || null)).map((c) => c.order || 0)) + 1;
+    const cat = { id: nextId(state, 'C'), name: n, parentId: parentId || null, icon: icon || 'pi-tag', color: color || '#82d2b3', order, image: image ?? null };
+    state.categories.push(cat);
+    return cat;
+  }
+
+  function updateCategory(state, id, patch) {
+    const c = catOf(state, id);
+    if (!c) throw new DomainError('cat_missing', 'ไม่พบหมวดนี้');
+    if ('name' in patch) c.name = checkCatName(state, patch.name, c.parentId, c.id);
+    for (const k of ['icon', 'color', 'order', 'image']) if (k in patch) c[k] = patch[k];
+    return c;
+  }
+
+  function productCounts(state) {
+    const m = new Map();
+    for (const p of state.products) {
+      const c = catOf(state, p.categoryId);
+      for (const id of [p.categoryId, c && c.parentId]) if (id) m.set(id, (m.get(id) || 0) + 1);
+    }
+    return m;
+  }
+
+  function deleteCategory(state, id, opts = {}) {
+    const c = catOf(state, id);
+    if (!c) throw new DomainError('cat_missing', 'ไม่พบหมวดนี้');
+    const subs = state.categories.filter((x) => x.parentId === id);
+    const prods = state.products.filter((p) => p.categoryId === id);
+    const n = (productCounts(state).get(id) || 0), m = subs.length;
+    if (!n && !m) { state.categories.splice(state.categories.indexOf(c), 1); return { movedProducts: 0 }; }
+    const to = opts.moveTo && catOf(state, opts.moveTo);
+    if (!opts.moveTo) throw new DomainError('cat_in_use', `หมวดนี้มีสินค้า ${n} รายการ และหมวดย่อย ${m} หมวด เลือกหมวดที่จะย้ายไปก่อน`);
+    if (!to || descendantIds(state, id).has(to.id)) throw new DomainError('cat_move_invalid', 'เลือกหมวดปลายทางอื่น');
+    // สินค้าของหมวดย่อยที่ถูก reparent ยังอยู่กับหมวดย่อยนั้น; เฉพาะสินค้าตรงของหมวดนี้ที่ย้าย
+    prods.forEach((p) => { p.categoryId = to.id; });
+    subs.forEach((s) => { s.parentId = to.parentId || to.id; });
+    state.categories.splice(state.categories.indexOf(c), 1);
+    return { movedProducts: prods.length };
+  }
+
+  function findSimilar(state, name) {
+    const q = norm(name);
+    if (q.length < 3) return [];
+    return state.products.filter((p) => {
+      const n = norm(p.name);
+      return n !== q && n.length >= 3 && (n.includes(q) || q.includes(n));
+    }).slice(0, 5);
+  }
+
+  function checkProduct(state, p, selfId) {
+    if (!norm(p.name) || !p.unit) throw new DomainError('prod_required', 'ใส่ชื่อและเลือกหน่วยก่อน');
+    const dup = state.products.find((x) => x.id !== selfId && norm(x.name) === norm(p.name));
+    if (dup) throw new DomainError('prod_dup', `มีสินค้านี้แล้ว: ${dup.id} ${dup.name}`);
+    if (!catOf(state, p.categoryId)) throw new DomainError('cat_required', 'เลือกหมวดหมู่ก่อน');
+  }
+  function checkCode(state, code, selfId) {
+    if (state.products.some((x) => x.id !== selfId && x.code === code)) throw new DomainError('code_dup', `รหัสนี้ใช้แล้ว: ${code}`);
+  }
+
+  function addProduct(state, input, actor) {
+    checkProduct(state, input, null);
+    if (input.initial) throw new DomainError('initial_unsupported', 'ยังลงยอดตั้งต้นไม่ได้');
+    const code = String(input.code ?? '').trim();
+    if (code) checkCode(state, code, null);
+    const id = nextId(state, 'P');
+    const product = {
+      id, code: code || id, name: String(input.name).trim(), brand: input.brand || '', model: input.model || '',
+      unit: input.unit, categoryId: input.categoryId, reorderPoint: input.reorderPoint ?? 0,
+      image: input.image ?? null, createdAt: new Date().toISOString(),
+    };
+    state.products.push(product);
+    return { product, receipt: null };
+  }
+
+  function updateProduct(state, id, patch) {
+    const p = state.products.find((x) => x.id === id);
+    if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้านี้');
+    const { id: _ignored, ...rest } = patch;
+    const next = { ...p, ...rest };
+    if ('name' in rest) next.name = String(rest.name).trim();
+    checkProduct(state, next, id);
+    if ('code' in rest) { next.code = String(rest.code ?? '').trim() || id; checkCode(state, next.code, id); }
+    return Object.assign(p, next);
+  }
+
   const Domain = {
     DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyOf, totalQty,
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
+    addCategory, updateCategory, deleteCategory, productCounts, findSimilar, addProduct, updateProduct,
   };
   root.Domain = Domain;
   if (typeof module !== 'undefined') module.exports = Domain;

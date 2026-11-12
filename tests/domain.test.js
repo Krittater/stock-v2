@@ -128,3 +128,58 @@ test('imageOf falls back product → sub-category → parent → null', () => {
   p.image = 'img/c.jpg'; assert.equal(D.imageOf(s, p), 'img/c.jpg');
   parent.image = sub.image = p.image = null; assert.equal(D.imageOf(s, p), null);
 });
+
+test('custom category rules', () => {
+  const s = Seed.build({ products: 50 });
+  const c = D.addCategory(s, { name: '  งานประปา ' });
+  assert.equal(c.name, 'งานประปา'); assert.equal(c.icon, 'pi-tag'); assert.equal(c.color, '#82d2b3'); assert.equal(c.image, null);
+  assert.throws(() => D.addCategory(s, { name: 'งานประปา' }), { code: 'cat_dup' });
+  const sub = D.addCategory(s, { name: 'ข้อต่อ PVC', parentId: c.id });
+  assert.throws(() => D.addCategory(s, { name: 'x', parentId: sub.id }), { code: 'cat_depth' });
+  assert.throws(() => D.addCategory(s, { name: '  ' }), { code: 'cat_name' });
+  assert.throws(() => D.updateCategory(s, sub.id, { name: ' ' }), { code: 'cat_name' });
+  assert.equal(D.updateCategory(s, sub.id, { name: 'ข้อต่อ', color: '#fff' }).color, '#fff');
+  assert.throws(() => D.updateCategory(s, c.id, { name: 'สายไฟ' }), { code: 'cat_dup' });
+  assert.doesNotThrow(() => D.updateCategory(s, c.id, { name: 'งานประปา' }));
+});
+test('delete category in use is blocked unless moved', () => {
+  const s = Seed.build({ products: 50 });
+  const sub = s.categories.find(c => c.name === 'สายไฟ THW');
+  const target = s.categories.find(c => c.name === 'สายไฟ VAF');
+  const n = s.products.filter(p => p.categoryId === sub.id).length;
+  assert.throws(() => D.deleteCategory(s, sub.id), { code: 'cat_in_use' });
+  assert.throws(() => D.deleteCategory(s, sub.id, { moveTo: sub.id }), { code: 'cat_move_invalid' });
+  assert.deepEqual(D.deleteCategory(s, sub.id, { moveTo: target.id }), { movedProducts: n });
+  assert.ok(s.products.every(p => s.categories.some(c => c.id === p.categoryId)));
+  const top = s.categories.find(c => c.name === 'สายไฟ');
+  assert.throws(() => D.deleteCategory(s, top.id, { moveTo: target.id + 'x' }), { code: 'cat_move_invalid' });
+  const m = D.deleteCategory(s, top.id, { moveTo: s.categories.find(c => c.name === 'กล่องและตู้').id });
+  assert.equal(m.movedProducts, 0);
+  assert.equal(s.categories.find(c => c.name === 'สายไฟ VAF').parentId, s.categories.find(c => c.name === 'กล่องและตู้').id);
+  assert.ok(s.categories.every(c => !c.parentId || s.categories.some(x => x.id === c.parentId)));
+  const e = D.addCategory(s, { name: 'ว่าง' }); D.deleteCategory(s, e.id);
+  assert.ok(!s.categories.some(c => c.id === e.id));
+});
+test('productCounts rolls up to parents', () => {
+  const s = Seed.build({ products: 50 });
+  const m = D.productCounts(s);
+  const top = s.categories.find(c => c.name === 'สายไฟ');
+  assert.equal(m.get(top.id), s.products.filter(p => D.descendantIds(s, top.id).has(p.categoryId)).length);
+});
+test('addProduct validation', () => {
+  const s = Seed.build({ products: 50 }); const head = s.users.find(u => u.role === 'head');
+  const cat = s.categories.find(c => c.name === 'สายไฟ THW').id;
+  assert.throws(() => D.addProduct(s, { name: '', unit: '', categoryId: cat }, head), { code: 'prod_required' });
+  assert.throws(() => D.addProduct(s, { name: 'x', unit: 'ตัว', categoryId: 'nope' }, head), { code: 'cat_required' });
+  assert.throws(() => D.addProduct(s, { name: 'สายไฟ thw 1.5 SQ.MM สีดำ', unit: 'เมตร', categoryId: cat }, head), { code: 'prod_dup' });
+  assert.throws(() => D.addProduct(s, { name: 'y', unit: 'ตัว', categoryId: cat, initial: { whId: 'W-BN', qty: 1 } }, head), { code: 'initial_unsupported' });
+  const { product, receipt } = D.addProduct(s, { name: 'น็อตสแตนเลส M8', unit: 'ตัว', categoryId: cat }, head);
+  assert.equal(product.id, 'P-0051'); assert.equal(product.code, 'P-0051'); assert.equal(receipt, null);
+  assert.equal(product.reorderPoint, 0); assert.equal(product.image, null); assert.ok(s.products.includes(product));
+  assert.throws(() => D.addProduct(s, { name: 'z', code: 'P-0051', unit: 'ตัว', categoryId: cat }, head), { code: 'code_dup' });
+  assert.ok(D.findSimilar(s, 'สายไฟ THW 1.5').length > 0);
+  assert.ok(D.findSimilar(s, 'สายไฟ THW 1.5').length <= 5);
+  assert.equal(D.updateProduct(s, product.id, { brand: 'B', id: 'X' }).id, 'P-0051');
+  assert.throws(() => D.updateProduct(s, product.id, { name: 'สายไฟ thw 1.5 SQ.MM สีดำ' }), { code: 'prod_dup' });
+  assert.doesNotThrow(() => D.updateProduct(s, product.id, { name: 'น็อตสแตนเลส M8' }));
+});
