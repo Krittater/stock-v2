@@ -294,3 +294,8 @@ test('addJob and similarJobs', () => {
   assert.deepEqual(D.similarJobs(s, 'ปรับปรุงห้องควบคุม โรงงาน C'), []); // closed job excluded
   assert.deepEqual(D.similarJobs(s, 'ซ่อมบำรุงประจำปี'), []); // exact excluded
 });
+test('addJob collapses whitespace only', () => {
+  const [s] = base6();
+  assert.equal(D.addJob(s, { name: ' Assess   panel ' }).name, 'Assess panel');
+  assert.equal(D.addJob(s, { name: 'Pass' }).name, 'Pass');
+});

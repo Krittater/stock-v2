@@ -224,7 +224,7 @@
   const similarJobs = (state, name) => similarByName(state.jobs.filter((j) => j.open), name);
 
   function addJob(state, { name, customer } = {}) {
-    const n = String(name ?? '').trim().replace(/s+/g, ' ');
+    const n = String(name ?? '').trim().replace(/\s+/g, ' ');
     if (!n) throw new DomainError('job_name', 'ใส่ชื่องานก่อน');
     const job = { id: nextId(state, 'J'), name: n, customer: customer || '', open: true };
     state.jobs.push(job);
