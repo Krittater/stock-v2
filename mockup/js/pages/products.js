@@ -10,6 +10,7 @@
     ['#c4b5fd', 'ม่วง'], ['#fdba74', 'ส้ม'], ['#bef264', 'เขียวอ่อน'], ['#f0abfc', 'ม่วงชมพู']];
   const IMAGES = Object.entries(window.ImageCredits || {}).map(([path, c]) => ({ path, title: c.title }));
   const byOrder = (a, b) => (a.order || 0) - (b.order || 0);
+  const fmt = (n, unit) => Domain.formatQty(n ?? 0, unit);
 
   window.Pages.products = {
     components: { ProductDialog: window.ProductDialog },
@@ -34,6 +35,19 @@
         p, id: p.id, name: p.name, code: p.code, total: Domain.totalQty(state, p.id),
         wh: state.warehouses.map((w) => Domain.qtyOf(state, p.id, w.id)),
       })));
+      const perPage = ref(20);
+      // เรียงแบบ DataTable เดิม: กดหัวคอลัมน์ = น้อยไปมาก กดซ้ำ = สลับ
+      const sort = reactive({ field: null, order: 1 });
+      const collator = new Intl.Collator('th', { numeric: true });
+      const sorted = computed(() => {
+        const { field, order } = sort;
+        if (!field) return rows.value;
+        return rows.value.slice().sort((a, b) => order * (field === 'total' ? a.total - b.total : collator.compare(a[field], b[field])));
+      });
+      const pageRows = computed(() => sorted.value.slice(first.value, first.value + perPage.value));
+      const sortBy = (f) => { sort.order = sort.field === f ? -sort.order : 1; sort.field = f; first.value = 0; };
+      const ariaSort = (f) => (sort.field !== f ? 'none' : sort.order > 0 ? 'ascending' : 'descending');
+      const sortIcon = (f) => (sort.field !== f ? 'pi-sort-alt' : sort.order > 0 ? 'pi-sort-amount-up-alt' : 'pi-sort-amount-down');
 
       const dlg = ref(false);
       const editing = ref(null);
@@ -109,7 +123,7 @@
       };
 
       return {
-        state, Domain, tab, setTab, qInput, text, catFilter, first, catGroups, rows, dlg, editing, openCreate, openEdit,
+        state, Domain, fmt, tab, setTab, qInput, text, catFilter, first, perPage, pageRows, sortBy, ariaSort, sortIcon, catGroups, rows, dlg, editing, openCreate, openEdit,
         tree, n, open, move, cd, openCat, saveCat, del, moveTargets, delSubs, askDelete, moveDelete,
         tops, ICONS, COLORS, IMAGES,
       };
@@ -133,36 +147,48 @@
                   showClear filter placeholder="ทุกหมวดหมู่" aria-label="กรองตามหมวด" class="pp-cat" />
                 <p-button label="เพิ่มวัสดุ" icon="pi pi-plus" @click="openCreate" />
               </div>
-              <p-datatable :value="rows" dataKey="id" paginator :rows="20" :rowsPerPageOptions="[20, 50, 100]" v-model:first="first" class="pp-table" scrollable>
-                <p-column field="name" header="วัสดุ" sortable bodyClass="pp-c-name">
-                  <template #body="{ data: r }">
-                    <div class="prod-cell">
-                      <product-thumb :product="r.p" :size="48" />
-                      <div class="min-w-0">
-                        <div class="prod-name">{{ r.p.name }}</div>
-                        <div class="prod-sub">{{ [r.p.brand !== '-' && r.p.brand, r.p.model].filter(Boolean).join(' · ') || '-' }}</div>
-                      </div>
-                    </div>
-                  </template>
-                </p-column>
-                <p-column field="code" header="รหัส" sortable><template #body="{ data: r }"><doc-id :id="r.p.code" /></template></p-column>
-                <p-column header="หมวด"><template #body="{ data: r }">{{ Domain.categoryPath(state, r.p.categoryId) }}</template></p-column>
-                <p-column header="หน่วย"><template #body="{ data: r }">{{ r.p.unit }}</template></p-column>
-                <p-column header="จุดสั่งซื้อ" headerClass="pp-r" bodyClass="pp-r"><template #body="{ data: r }"><qty :n="r.p.reorderPoint" :unit="r.p.unit" /></template></p-column>
-                <p-column field="total" header="ยอดรวมทุกคลัง" sortable headerClass="pp-r" bodyClass="pp-r">
-                  <template #body="{ data: r }"><b><qty :n="r.total" :unit="r.p.unit" /></b></template>
-                </p-column>
-                <p-column v-for="(w, i) in state.warehouses" :key="w.id" :header="w.name" headerClass="pp-r pp-wh" bodyClass="pp-r pp-wh">
-                  <template #body="{ data: r }"><qty :n="r.wh[i]" :unit="r.p.unit" /></template>
-                </p-column>
-                <p-column bodyClass="pp-act">
-                  <template #header><span class="sr-only">แก้ไข</span></template>
-                  <template #body="{ data: r }">
-                    <button type="button" class="icon-btn" :aria-label="'แก้ไข ' + r.p.name" @click="openEdit(r.p)"><i class="pi pi-pencil" aria-hidden="true"></i></button>
-                  </template>
-                </p-column>
-                <template #empty><div class="table-empty"><p>ไม่พบวัสดุ{{ text ? ' "' + text + '"' : '' }}</p></div></template>
-              </p-datatable>
+              <!-- ตารางธรรมดา + p-paginator: DataTable ช้าเกิน 500ms ต่อหน้าที่ 100 แถว -->
+              <div class="pp-table">
+                <div class="pp-scroll">
+                  <table class="pp">
+                    <thead><tr>
+                      <th :aria-sort="ariaSort('name')">
+                        <button type="button" class="pp-sort" @click="sortBy('name')">วัสดุ <i :class="['pi', sortIcon('name')]" aria-hidden="true"></i></button></th>
+                      <th :aria-sort="ariaSort('code')">
+                        <button type="button" class="pp-sort" @click="sortBy('code')">รหัส <i :class="['pi', sortIcon('code')]" aria-hidden="true"></i></button></th>
+                      <th>หมวด</th><th>หน่วย</th><th class="pp-r">จุดสั่งซื้อ</th>
+                      <th class="pp-r" :aria-sort="ariaSort('total')">
+                        <button type="button" class="pp-sort" @click="sortBy('total')">ยอดรวมทุกคลัง <i :class="['pi', sortIcon('total')]" aria-hidden="true"></i></button></th>
+                      <th v-for="w in state.warehouses" :key="w.id" class="pp-r pp-wh">{{ w.name }}</th>
+                      <th><span class="sr-only">แก้ไข</span></th>
+                    </tr></thead>
+                    <tbody>
+                      <tr v-for="r in pageRows" :key="r.id">
+                        <td class="pp-c-name">
+                          <div class="prod-cell">
+                            <product-thumb :product="r.p" :size="48" />
+                            <div class="min-w-0">
+                              <div class="prod-name">{{ r.p.name }}</div>
+                              <div class="prod-sub">{{ [r.p.brand !== '-' && r.p.brand, r.p.model].filter(Boolean).join(' · ') || '-' }}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td><span class="doc-id">{{ r.p.code }}</span></td>
+                        <td>{{ Domain.categoryPath(state, r.p.categoryId) }}</td>
+                        <td>{{ r.p.unit }}</td>
+                        <td class="pp-r"><span class="num">{{ fmt(r.p.reorderPoint, r.p.unit) }}</span></td>
+                        <td class="pp-r"><b class="num">{{ fmt(r.total, r.p.unit) }}</b></td>
+                        <td v-for="(w, i) in state.warehouses" :key="w.id" class="pp-r pp-wh"><span class="num">{{ fmt(r.wh[i], r.p.unit) }}</span></td>
+                        <td class="pp-act">
+                          <button type="button" class="icon-btn" :aria-label="'แก้ไข ' + r.p.name" @click="openEdit(r.p)"><i class="pi pi-pencil" aria-hidden="true"></i></button>
+                        </td>
+                      </tr>
+                      <tr v-if="!rows.length"><td :colspan="7 + state.warehouses.length"><div class="table-empty"><p>ไม่พบวัสดุ{{ text ? ' "' + text + '"' : '' }}</p></div></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p-paginator v-model:first="first" v-model:rows="perPage" :totalRecords="rows.length" :rowsPerPageOptions="[20, 50, 100]" />
+              </div>
             </section>
           </p-tabpanel>
 

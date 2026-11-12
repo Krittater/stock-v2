@@ -53,6 +53,8 @@
         return c;
       });
       const rows = computed(() => base.value.filter(([, s]) => tab.value === 'all' || s === tab.value).map(([p]) => p));
+      const perPage = ref(20);
+      const pageRows = computed(() => rows.value.slice(first.value, first.value + perPage.value));
       const TABS = [['all', 'ทั้งหมด'], ['in', 'มีของ'], ['low', 'ใกล้หมด'], ['out', 'ไม่มีของ']];
       const brandOptions = computed(() => [...new Set(state.products.map((p) => p.brand))].filter((b) => b && b !== '-').sort());
       const filterPop = ref();
@@ -185,7 +187,7 @@
       const viewHistory = () => { result.value = null; go('home'); };
 
       return {
-        state, cart, Domain, fmt, whName, qInput, text, categoryId, tab, TABS, brands, hideAdded, first, rows, counts,
+        state, cart, Domain, fmt, whName, qInput, text, categoryId, tab, TABS, brands, hideAdded, first, perPage, pageRows, rows, counts,
         brandOptions, filterPop, filterCount, kpiTab, go, tops, selectedCat, stripActive, pickTop, catsOpen, catQuery,
         catCounts, catGroups, pickCat, manageCats, rowWh, whOf, rowQty, rowStatus, setRowWh, whOptions, cartStatus, inCart,
         flashId, add, showInCart, detail, detailWh, detailPRs, addFromDetail, createOpen, onCreated, cartRows, totalQty, remove,
@@ -242,55 +244,60 @@
               </div>
             </p-popover>
 
-            <p-datatable :value="rows" dataKey="id" paginator :rows="20" :rowsPerPageOptions="[20, 50, 100]" v-model:first="first" class="issue-table">
-              <p-column header="รายการสินค้า" bodyClass="col-prod">
-                <template #body="{ data: p }">
-                  <div class="prod-cell">
-                    <product-thumb :product="p" :size="56" />
-                    <div class="min-w-0">
-                      <div class="prod-name">{{ p.name }}</div>
-                      <div class="prod-sub">รหัส: {{ p.code }}</div>
-                      <div class="prod-sub">{{ Domain.categoryPath(state, p.categoryId) }}</div>
-                    </div>
-                  </div>
-                </template>
-              </p-column>
-              <p-column header="คงเหลือ" headerClass="col-num" bodyClass="col-qty">
-                <template #body="{ data: p }"><qty :n="rowQty(p)" :unit="p.unit" /></template>
-              </p-column>
-              <p-column header="สถานะคลัง" bodyClass="col-status">
-                <template #body="{ data: p }"><status-tag :status="rowStatus(p)" /></template>
-              </p-column>
-              <p-column bodyClass="col-wh">
-                <template #header><span class="sr-only">คลัง</span></template>
-                <template #body="{ data: p }">
-                  <span v-if="rowStatus(p) === 'out' && !rowWh[p.id]" class="muted wh-none">-</span>
-                  <p-select v-else :modelValue="whOf(p)" @update:modelValue="setRowWh(p, $event)" :options="whOptions(p)"
-                    optionLabel="label" optionValue="id" class="row-wh" :ariaLabel="'ดูยอดคงเหลือของ ' + p.name + ' ในคลังอื่น'">
-                    <template #value>{{ whName(whOf(p)) }}</template>
-                  </p-select>
-                </template>
-              </p-column>
-              <p-column header="หน่วย" bodyClass="col-unit">
-                <template #body="{ data: p }">{{ p.unit }}</template>
-              </p-column>
-              <p-column bodyClass="col-act">
-                <template #header><span class="sr-only">เพิ่มเข้าใบเบิก</span></template>
-                <template #body="{ data: p }">
-                  <p-button v-if="inCart.has(p.id)" label="เพิ่มแล้ว" icon="pi pi-check" class="btn-added" @click="showInCart(p)"
-                    :ariaLabel="'เพิ่มแล้ว: ' + p.name + ' (ไปที่รายการเบิก)'" />
-                  <p-button v-else-if="cartStatus(p) === 'out'" label="ดูรายละเอียด" severity="secondary" outlined class="btn-detail" @click="detail = p" />
-                  <p-button v-else label="เพิ่ม" icon="pi pi-shopping-cart" class="btn-add" @click="add(p)" :ariaLabel="'เพิ่ม ' + p.name" />
-                </template>
-              </p-column>
-              <template #empty>
-                <div class="table-empty">
-                  <p>ไม่พบสินค้า{{ text ? ' "' + text + '"' : '' }}</p>
-                  <button v-if="text" type="button" class="dashed-btn" @click="createOpen = true">
-                    <i class="pi pi-plus" aria-hidden="true"></i> สร้างสินค้าใหม่ "{{ text }}"</button>
-                </div>
-              </template>
-            </p-datatable>
+            <!-- ตารางธรรมดา + p-paginator: DataTable ช้าเกิน 500ms ต่อหน้าที่ 100 แถว -->
+            <div class="issue-table">
+              <div class="it-scroll">
+                <table class="it">
+                  <thead><tr>
+                    <th>รายการสินค้า</th><th class="col-num">คงเหลือ</th><th>สถานะคลัง</th><th><span class="sr-only">คลัง</span></th>
+                    <th>หน่วย</th><th><span class="sr-only">เพิ่มเข้าใบเบิก</span></th>
+                  </tr></thead>
+                  <tbody>
+                    <tr v-for="p in pageRows" :key="p.id">
+                      <td class="col-prod">
+                        <div class="prod-cell">
+                          <product-thumb :product="p" :size="56" />
+                          <div class="min-w-0">
+                            <div class="prod-name">{{ p.name }}</div>
+                            <div class="prod-sub">รหัส: {{ p.code }}</div>
+                            <div class="prod-sub">{{ Domain.categoryPath(state, p.categoryId) }}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="col-qty"><span class="num">{{ fmt(rowQty(p), p.unit) }}</span></td>
+                      <td class="col-status"><status-tag :status="rowStatus(p)" /></td>
+                      <td class="col-wh">
+                        <span v-if="rowStatus(p) === 'out' && !rowWh[p.id]" class="muted wh-none">-</span>
+                        <span v-else class="row-wh">
+                          <span class="row-wh-val">{{ whName(whOf(p)) }}</span><i class="pi pi-chevron-down" aria-hidden="true"></i>
+                          <select :value="whOf(p)" @change="setRowWh(p, $event.target.value)" :aria-label="'ดูยอดคงเหลือของ ' + p.name + ' ในคลังอื่น'">
+                            <option v-for="o in whOptions(p)" :key="o.id" :value="o.id">{{ o.label }}</option>
+                          </select>
+                        </span>
+                      </td>
+                      <td class="col-unit">{{ p.unit }}</td>
+                      <td class="col-act">
+                        <!-- ปุ่ม HTML + คลาส p-button: หน้าตาเดียวกับ p-button แต่ไม่ต้องสร้างคอมโพเนนต์ 100 ตัวต่อหน้า -->
+                        <button v-if="inCart.has(p.id)" type="button" class="p-button p-component btn-added" @click="showInCart(p)"
+                          :aria-label="'เพิ่มแล้ว: ' + p.name + ' (ไปที่รายการเบิก)'"><span class="p-button-icon pi pi-check" aria-hidden="true"></span><span class="p-button-label">เพิ่มแล้ว</span></button>
+                        <button v-else-if="cartStatus(p) === 'out'" type="button" class="p-button p-component p-button-secondary p-button-outlined btn-detail"
+                          @click="detail = p"><span class="p-button-label">ดูรายละเอียด</span></button>
+                        <button v-else type="button" class="p-button p-component btn-add" @click="add(p)" :aria-label="'เพิ่ม ' + p.name"><span
+                          class="p-button-icon pi pi-shopping-cart" aria-hidden="true"></span><span class="p-button-label">เพิ่ม</span></button>
+                      </td>
+                    </tr>
+                    <tr v-if="!rows.length" class="it-empty"><td colspan="6">
+                      <div class="table-empty">
+                        <p>ไม่พบสินค้า{{ text ? ' "' + text + '"' : '' }}</p>
+                        <button v-if="text" type="button" class="dashed-btn" @click="createOpen = true">
+                          <i class="pi pi-plus" aria-hidden="true"></i> สร้างสินค้าใหม่ "{{ text }}"</button>
+                      </div>
+                    </td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p-paginator v-model:first="first" v-model:rows="perPage" :totalRecords="rows.length" :rowsPerPageOptions="[20, 50, 100]" />
+            </div>
           </section>
         </div>
 

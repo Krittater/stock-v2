@@ -252,15 +252,19 @@ body {
 .cat-chip button { width: 44px; height: 44px; border: 0; background: transparent; color: inherit; cursor: pointer; border-radius: 50%; }
 .filter-pop { width: 300px; max-width: calc(100vw - 48px); display: flex; flex-direction: column; gap: 10px; }
 
-.issue-page .issue-table .p-datatable-thead > tr > th { background: var(--p-surface-100); color: var(--app-muted); font-size: 14px; font-weight: 500;
-  padding: 10px 6px; border: 0; }
-.app-dark .issue-page .issue-table .p-datatable-thead > tr > th { background: var(--p-surface-800); }
-.issue-page .issue-table .p-datatable-thead > tr > th:first-child { border-radius: 8px 0 0 8px; }
-.issue-page .issue-table .p-datatable-thead > tr > th:last-child { border-radius: 0 8px 8px 0; }
-.issue-page .issue-table .p-datatable-tbody > tr > td { padding: 8px 6px; border-color: var(--app-border); vertical-align: middle; }
-.issue-page .issue-table .p-datatable-tbody > tr:last-child > td { border-bottom: 0; }
-.issue-page .issue-table .col-num .p-datatable-column-header-content { justify-content: flex-end; }
-.issue-page .issue-table .p-paginator { padding: 8px 0 0; }
+.issue-table .it-scroll { overflow-x: auto; position: relative; }
+.issue-table .it { width: 100%; border-collapse: separate; border-spacing: 0; }
+.issue-table .it th { background: var(--p-surface-100); color: var(--app-muted); font-size: 14px; font-weight: 500; text-align: left;
+  padding: 10px 6px; border: 0; white-space: nowrap; }
+.app-dark .issue-table .it th { background: var(--p-surface-800); }
+.issue-table .it th:first-child { border-radius: 8px 0 0 8px; }
+.issue-table .it th:last-child { border-radius: 0 8px 8px 0; }
+.issue-table .it td { padding: 8px 6px; border-bottom: 1px solid var(--app-border); vertical-align: middle; }
+.issue-table .it tbody > tr:last-child > td { border-bottom: 0; }
+.issue-table .it th.col-num { text-align: right; }
+.issue-table .it tr > :first-child { padding-left: 8px; }
+.issue-table .it tr > :last-child { padding-right: 8px; }
+.issue-table .p-paginator { padding: 8px 0 0; }
 .prod-cell { display: flex; align-items: center; gap: 10px; min-width: 240px; }
 .prod-name { font-weight: 700; font-size: 15px; line-height: 1.35; }
 .prod-sub { font-size: 14px; color: var(--app-muted); line-height: 1.35; }
@@ -268,12 +272,13 @@ body {
 .col-unit { white-space: nowrap; }
 .col-act { text-align: right; width: 1%; }
 .wh-none { display: inline-block; padding-left: 12px; }
-.issue-page .row-wh.p-select { border: 0; background: transparent; box-shadow: none; white-space: nowrap; }
-.issue-page .row-wh .p-select-label { padding: 0 4px 0 0; font-size: 15px; color: var(--app-text); }
-.issue-page .row-wh .p-select-dropdown { width: 24px; color: var(--app-text); }
+/* select จริงโปร่งใสทับชื่อคลัง — ปิดอยู่เห็นแค่ชื่อคลังเหมือนรูป เปิดแล้วเห็นยอดทุกคลัง */
+.row-wh { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding-right: 4px; border-radius: 8px;
+  font-size: 15px; white-space: nowrap; color: var(--app-text); }
+.row-wh .pi { font-size: 14px; }
+.row-wh select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font: inherit; font-size: 16px; }
+.row-wh:focus-within { outline: 2px solid var(--p-primary-500); outline-offset: 2px; }
 .issue-page .p-button.btn-add, .issue-page .p-button.btn-added, .issue-page .p-button.btn-detail { min-width: 92px; padding: 0 12px; gap: 6px; white-space: nowrap; }
-.issue-page .issue-table .p-datatable-table tr > :first-child { padding-left: 8px; }
-.issue-page .issue-table .p-datatable-table tr > :last-child { padding-right: 8px; }
 .issue-page .btn-added.p-button { background: var(--p-primary-50); border-color: var(--p-primary-50); color: var(--p-primary-700); }
 .issue-page .btn-added.p-button:not(:disabled):hover { background: var(--p-primary-100); border-color: var(--p-primary-100); color: var(--p-primary-800); }
 .app-dark .issue-page .btn-added.p-button { background: color-mix(in srgb, var(--p-primary-400) 18%, transparent); border-color: transparent; color: var(--p-primary-200); }
@@ -379,20 +384,20 @@ body {
   .toolbar-right { flex-basis: 100%; }
   .table-search { flex: 1 1 auto; }
   /* ตารางเป็นการ์ดซ้อน: ชื่อ / คงเหลือ+สถานะ / คลัง+ปุ่ม */
-  .issue-page .issue-table .p-datatable-thead { display: none; }
-  .issue-page .issue-table .p-datatable-table, .issue-page .issue-table .p-datatable-tbody { display: block; }
-  .issue-page .issue-table .p-datatable-tbody > tr:not(.p-datatable-empty-message) { display: grid; grid-template-columns: auto 1fr auto;
+  .issue-table .it thead { display: none; }
+  .issue-table .it, .issue-table .it tbody { display: block; }
+  .issue-table .it tbody > tr:not(.it-empty) { display: grid; grid-template-columns: auto 1fr auto;
     grid-template-areas: "prod prod prod" "qty status status" "wh wh act"; align-items: center; gap: 4px 12px; padding: 10px 0;
     border-bottom: 1px solid var(--app-border); }
-  .issue-page .issue-table .p-datatable-tbody > tr > td { border: 0; padding: 0; }
-  .issue-page .issue-table .col-prod { grid-area: prod; }
-  .issue-page .issue-table .col-qty { grid-area: qty; text-align: left; }
-  .issue-page .issue-table .col-status { grid-area: status; }
-  .issue-page .issue-table .col-wh { grid-area: wh; min-width: 0; }
-  .issue-page .issue-table .col-act { grid-area: act; width: auto; }
-  .issue-page .issue-table .col-unit { display: none; }
+  .issue-table .it tbody > tr > td { border: 0; padding: 0; }
+  .issue-table .col-prod { grid-area: prod; }
+  .issue-table .col-qty { grid-area: qty; text-align: left; }
+  .issue-table .col-status { grid-area: status; }
+  .issue-table .col-wh { grid-area: wh; min-width: 0; }
+  .issue-table .col-act { grid-area: act; width: auto; }
+  .issue-table .col-unit { display: none; }
   .prod-cell { min-width: 0; }
-  .issue-page .issue-table .p-datatable-empty-message, .issue-page .issue-table .p-datatable-empty-message > td { display: block; }
+  .issue-table .it-empty, .issue-table .it-empty > td { display: block; }
   /* ปุ่มเบิกติดล่างจอเสมอ (sticky ใช้ไม่ได้เพราะปุ่มอยู่ในการ์ดตะกร้า ซึ่งอยู่ท้ายหน้า) */
   .cart-submit { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
     background: var(--app-card); border-top: 1px solid var(--app-border); box-shadow: 0 -4px 16px rgb(0 0 0 / .08); }
@@ -413,14 +418,23 @@ body {
 .pp-search { flex: 1 1 240px; min-width: 0; }
 .pp-cat { flex: 0 1 260px; min-width: 0; width: 260px; }
 .pp-hint { flex: 1 1 200px; margin: 0; font-size: 14px; }
-.products-page .pp-table .p-datatable-thead > tr > th { background: var(--p-surface-100); color: var(--app-muted); font-size: 14px; font-weight: 500; padding: 10px 8px; border: 0; white-space: nowrap; }
-.app-dark .products-page .pp-table .p-datatable-thead > tr > th { background: var(--p-surface-800); }
-.products-page .pp-table .p-datatable-tbody > tr > td { padding: 8px; border-color: var(--app-border); vertical-align: middle; }
-.products-page .pp-table .pp-c-name { min-width: 240px; }
-.products-page .pp-table .pp-r { text-align: right; }
-.products-page .pp-table th.pp-r .p-datatable-column-header-content { justify-content: flex-end; }
-.products-page .pp-table .pp-act { width: 56px; }
-.products-page .pp-table .p-paginator { padding: 8px 0 0; }
+.pp-table .pp-scroll { overflow-x: auto; position: relative; }
+.pp-table .pp { width: 100%; border-collapse: separate; border-spacing: 0; }
+.pp-table .pp th { background: var(--p-surface-100); color: var(--app-muted); font-size: 14px; font-weight: 500; text-align: left; padding: 10px 8px; border: 0; white-space: nowrap; }
+.app-dark .pp-table .pp th { background: var(--p-surface-800); }
+.pp-table .pp th[aria-sort] { padding: 0 2px; }
+.pp-table .pp td { padding: 8px; border-bottom: 1px solid var(--app-border); vertical-align: middle; }
+.pp-table .pp-c-name { min-width: 240px; }
+.pp-table .pp .pp-r { text-align: right; }
+.pp-table .pp-act { width: 56px; }
+.pp-table .p-paginator { padding: 8px 0 0; }
+.pp-sort { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent;
+  color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
+.pp-sort:hover { background: var(--nav-hover-bg); color: var(--app-text); }
+.pp-sort:focus-visible { outline: 2px solid var(--p-primary-500); outline-offset: -2px; }
+.pp-sort .pi { font-size: 13px; }
+.pp-table th[aria-sort="ascending"] .pp-sort, .pp-table th[aria-sort="descending"] .pp-sort { color: var(--p-primary-700); }
+.app-dark .pp-table th[aria-sort="ascending"] .pp-sort, .app-dark .pp-table th[aria-sort="descending"] .pp-sort { color: var(--p-primary-300); }
 @media (max-width: 1279px) { .products-page .pp-wh { display: none; } }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent;
   color: var(--app-text); cursor: pointer; font-size: 16px; flex: none; }
@@ -454,7 +468,7 @@ body {
 .del-msg { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 14px; font-size: 16px; }
 .del-msg .pi { color: #d97706; margin-top: 4px; }
 @media (max-width: 640px) { .cat-row.sub { padding-left: 12px; } .add-sub span { display: none; } .add-sub { width: 44px; justify-content: center; padding: 0; } }
-.products-page .pp-table td .doc-id { white-space: nowrap; }
+.pp-table td .doc-id { white-space: nowrap; }
 
 /* ---------- หน้ารับของเข้า ---------- */
 .receive-page .page-header { margin: 4px 0 16px; }
