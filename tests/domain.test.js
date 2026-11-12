@@ -299,3 +299,54 @@ test('addJob collapses whitespace only', () => {
   assert.equal(D.addJob(s, { name: ' Assess   panel ' }).name, 'Assess panel');
   assert.equal(D.addJob(s, { name: 'Pass' }).name, 'Pass');
 });
+
+test('count locks, adjusts, unlocks', () => {
+  const s = Seed.build({ products: 50 }); const st = s.users.find(u => u.role === 'store');
+  const cat = s.categories.find(c => c.name === 'กล่องและตู้').id;
+  const c = D.startCount(s, { whId: 'W-BN', categoryId: cat }, st);
+  assert.equal(s.warehouses.find(w => w.id === 'W-BN').countId, c.id);
+  assert.ok(c.lines.some(l => l.productId === 'P-0002' && l.system === 342));
+  assert.throws(() => D.startCount(s, { whId: 'W-BN' }, st), { code: 'wh_counting' });
+  D.setCounted(s, c.id, 'P-0002', 340);
+  assert.deepEqual(D.countSummary(c).diffLines, 1);
+  const { adjust } = D.closeCount(s, c.id, st);
+  assert.equal(adjust.lines[0].qty, -2); assert.equal(D.qtyOf(s, 'P-0002', 'W-BN'), 340);
+  assert.equal(s.warehouses.find(w => w.id === 'W-BN').countId, null);
+  assert.equal(c.status, 'closed'); assert.equal(adjust.type, 'adjust'); assert.ok(s.docs.includes(adjust));
+});
+test('count permissions and cancel', () => {
+  const s = Seed.build({ products: 50 });
+  assert.throws(() => D.startCount(s, { whId: 'W-A' }, s.users.find(u => u.role === 'engineer')), { code: 'forbidden' });
+  const h = s.users.find(u => u.role === 'head'); const c = D.startCount(s, { whId: 'W-A' }, h);
+  assert.throws(() => D.setCounted(s, c.id, c.lines[0].productId, -1), { code: 'qty_invalid' });
+  D.cancelCount(s, c.id, h); assert.equal(c.status, 'cancelled');
+  assert.equal(s.warehouses.find(w => w.id === 'W-A').countId, null);
+});
+test('count edge cases: summary, no-diff close, errors', () => {
+  const s = Seed.build({ products: 50 }); const st = s.users.find(u => u.role === 'store');
+  const eng = s.users.find(u => u.role === 'engineer');
+  const c = D.startCount(s, { whId: 'W-A' }, st);
+  const [l0, l1] = c.lines;
+  D.setCounted(s, c.id, l0.productId, l0.system + 3);
+  D.setCounted(s, c.id, l1.productId, 0);
+  const sum = D.countSummary(c);
+  assert.equal(sum.counted, 2); assert.equal(sum.diffPlus, 3); assert.equal(sum.diffMinus, l1.system);
+  D.setCounted(s, c.id, l1.productId, null); assert.equal(l1.counted, null);
+  assert.throws(() => D.setCounted(s, c.id, 'P-9999', 1), { code: 'prod_missing' });
+  assert.throws(() => D.setCounted(s, 'CC-9999', l0.productId, 1), { code: 'count_missing' });
+  assert.throws(() => D.closeCount(s, c.id, eng), { code: 'forbidden' });
+  assert.throws(() => D.cancelCount(s, c.id, eng), { code: 'forbidden' });
+  D.setCounted(s, c.id, l0.productId, l0.system);
+  const r = D.closeCount(s, c.id, st); assert.equal(r.adjust, null);
+  assert.throws(() => D.closeCount(s, c.id, st), { code: 'count_closed' });
+  assert.throws(() => D.setCounted(s, c.id, l0.productId, 1), { code: 'count_closed' });
+});
+test('setCounted unit rules', () => {
+  const s = Seed.build({ products: 50 }); const st = s.users.find(u => u.role === 'store');
+  const c = D.startCount(s, { whId: 'W-A' }, st);
+  const m = c.lines.find(l => s.products.find(p => p.id === l.productId).unit === 'เมตร');
+  const n = c.lines.find(l => s.products.find(p => p.id === l.productId).unit !== 'เมตร');
+  assert.throws(() => D.setCounted(s, c.id, n.productId, 1.5), { code: 'qty_integer' });
+  assert.throws(() => D.setCounted(s, c.id, m.productId, 1.234), { code: 'qty_invalid' });
+  D.setCounted(s, c.id, m.productId, 1.25); assert.equal(m.counted, 1.25);
+});

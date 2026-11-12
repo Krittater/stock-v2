@@ -371,12 +371,86 @@
     return Object.assign(p, next);
   }
 
+  const diffOf = (l) => +(l.counted - l.system).toFixed(2);
+
+  function startCount(state, { whId, categoryId = null } = {}, actor) {
+    if (actor.role === 'engineer') throw new DomainError('forbidden', 'เฉพาะ Store หรือหัวหน้าเปิดรอบนับได้');
+    const wh = state.warehouses.find((w) => w.id === whId);
+    if (!wh) throw new DomainError('wh_required', 'เลือกคลังที่จะนับก่อน');
+    assertWarehouseOpen(state, whId);
+    const cats = categoryId ? descendantIds(state, categoryId) : null;
+    const count = {
+      id: nextId(state, 'CC'), whId, categoryId: categoryId ?? null, status: 'open', by: actor.id, at: new Date().toISOString(),
+      lines: state.products.filter((p) => !cats || cats.has(p.categoryId))
+        .map((p) => ({ productId: p.id, system: qtyOf(state, p.id, whId), counted: null })),
+    };
+    state.counts.push(count);
+    wh.countId = count.id;
+    return count;
+  }
+
+  function openCount(state, countId) {
+    const c = state.counts.find((x) => x.id === countId);
+    if (!c) throw new DomainError('count_missing', 'ไม่พบรอบนับ');
+    if (c.status !== 'open') throw new DomainError('count_closed', 'รอบนับนี้ปิดแล้ว');
+    return c;
+  }
+
+  function setCounted(state, countId, productId, qty) {
+    const c = openCount(state, countId);
+    const line = c.lines.find((l) => l.productId === productId);
+    if (!line) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
+    if (qty !== null) {
+      if (Number.isFinite(qty) && qty < 0) throw new DomainError('qty_invalid', 'จำนวนที่นับต้องไม่ติดลบ');
+      if (qty !== 0) validateQty(qty, state.products.find((p) => p.id === productId).unit);
+    }
+    line.counted = qty;
+  }
+
+  function countSummary(count) {
+    const done = count.lines.filter((l) => l.counted !== null);
+    const diffs = done.map(diffOf).filter((d) => d !== 0);
+    return {
+      total: count.lines.length, counted: done.length, diffLines: diffs.length,
+      diffPlus: +diffs.filter((d) => d > 0).reduce((a, d) => a + d, 0).toFixed(2),
+      diffMinus: +diffs.filter((d) => d < 0).reduce((a, d) => a - d, 0).toFixed(2),
+    };
+  }
+
+  function closeCount(state, countId, actor) {
+    if (actor.role === 'engineer') throw new DomainError('forbidden', 'เฉพาะ Store หรือหัวหน้าปิดรอบนับได้');
+    const count = openCount(state, countId);
+    const changed = count.lines.filter((l) => l.counted !== null && diffOf(l) !== 0);
+    let adjust = null;
+    if (changed.length) {
+      adjust = {
+        id: nextId(state, 'ADJ'), type: 'adjust', status: 'posted', whId: count.whId,
+        lines: changed.map((l) => ({ productId: l.productId, qty: diffOf(l) })),
+        note: 'ปรับยอดจากรอบนับ ' + count.id, by: actor.id, at: new Date().toISOString(),
+      };
+      state.docs.push(adjust);
+      changed.forEach((l) => { state.stock[stockKey(l.productId, count.whId)] = l.counted; });
+    }
+    state.warehouses.find((w) => w.id === count.whId).countId = null;
+    count.status = 'closed';
+    return { count, adjust };
+  }
+
+  function cancelCount(state, countId, actor) {
+    if (actor.role === 'engineer') throw new DomainError('forbidden', 'เฉพาะ Store หรือหัวหน้าปิดรอบนับได้');
+    const count = openCount(state, countId);
+    state.warehouses.find((w) => w.id === count.whId).countId = null;
+    count.status = 'cancelled';
+    return count;
+  }
+
   const Domain = {
     DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyOf, totalQty,
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
     addCategory, updateCategory, deleteCategory, productCounts, findSimilar, addProduct, updateProduct,
     receive, confirmReceipt, openPRs, needsApproval, issue, approveIssue, addJob, similarJobs,
+    startCount, setCounted, countSummary, closeCount, cancelCount,
   };
   root.Domain = Domain;
   if (typeof module !== 'undefined') module.exports = Domain;
