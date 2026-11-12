@@ -19,12 +19,13 @@
       style() {
         const s = Number(this.size) + 'px';
         const showImg = this.src && !this.failed;
-        return { width: s, height: s, background: showImg ? '#fff' : `color-mix(in srgb, ${this.color} 14%, #fff)` };
+        // ไม่มีรูป: พื้นสีหมวด (โทนอ่อน) + ไอคอนสีเข้มอ่านออก — โหมดมืดสลับใน app.css (.thumb-icon)
+        return showImg ? { width: s, height: s, background: '#fff' } : { width: s, height: s, '--thumb-tint': this.color };
       },
     },
-    template: `<span class="thumb" :class="{ 'thumb-round': round }" :style="style">
+    template: `<span class="thumb" :class="{ 'thumb-round': round, 'thumb-icon': !(src && !failed) }" :style="style">
       <img v-if="src && !failed" :src="src" :alt="alt || ''" loading="lazy" @error="failed = true">
-      <i v-else :class="['pi', icon]" :style="{ color, fontSize: Math.round(size * 0.42) + 'px' }" aria-hidden="true"></i>
+      <i v-else :class="['pi', icon]" :style="{ fontSize: Math.round(size * 0.42) + 'px' }" aria-hidden="true"></i>
     </span>`,
   };
 
