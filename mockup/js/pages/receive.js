@@ -56,7 +56,7 @@
       const onCreated = (p) => addLine(p.id);
 
       // ---------- PR ----------
-      const prs = computed(() => Domain.openPRs(state).map((r) => ({ ...r, p: byId.value.get(r.productId) })));
+      const prs = computed(() => Domain.openPRs(state).reverse().map((r) => ({ ...r, p: byId.value.get(r.productId) }))); // ใหม่สุดก่อน
       const sel = ref([]);
       const prFirst = ref(0);
       const addPRs = () => {

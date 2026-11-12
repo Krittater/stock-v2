@@ -53,7 +53,8 @@
       const editing = ref(null);
       const openCreate = () => { editing.value = null; dlg.value = true; };
       const openEdit = (p) => { editing.value = p; dlg.value = true; };
-      if (route.query.new) openCreate(); // ทางลัด "เพิ่มวัสดุ" จากหน้าแรก
+      // ทางลัด "เพิ่มวัสดุ" (?new=1) — watch เพราะมาจากแท็บหมวดหมู่หน้าไม่เมานต์ใหม่; เปิดแล้วล้าง query กันเปิดซ้ำตอน reload
+      watch(() => route.query.new, (v) => { if (v) { openCreate(); go('products', tab.value === 'categories' ? { tab: 'categories' } : {}); } }, { immediate: true });
 
       // ---------- หมวดหมู่ ----------
       const counts = computed(() => Domain.productCounts(state));

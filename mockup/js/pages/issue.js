@@ -170,8 +170,8 @@
         busy.value = true;
         setTimeout(() => { // กันกดซ้ำ + ให้เห็นว่ากำลังส่ง
           const input = { whId: cart.value.whId, jobId: cart.value.jobId, note: (cart.value.note || '').trim(), lines: cart.value.lines.map((l) => ({ productId: l.productId, qty: l.qty })) };
-          const r = act((s, u) => Domain.issue(s, input, u));
-          busy.value = false;
+          let r;
+          try { r = act((s, u) => Domain.issue(s, input, u)); } finally { busy.value = false; } // act() โยนต่อเมื่อ error ไม่ใช่ของ Domain
           if (r) { result.value = r; cart.value.lines.splice(0); cart.value.note = ''; } // "เบิกต่อ" = ล้างบรรทัด+หมายเหตุ เก็บคลังและงาน
         }, 600);
       };
