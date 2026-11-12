@@ -518,7 +518,9 @@ body {
 .count-page .ct-pcell { display: flex; align-items: center; gap: 10px; min-width: 220px; }
 .count-page .ct-pname { font-weight: 500; }
 .count-page .ct-pcode { font-size: 14px; font-family: var(--app-mono); }
-.count-page .cnt-in { width: 150px; }
+.count-page .cnt-wrap { display: flex; align-items: center; gap: 8px; }
+.count-page .cnt-unit { min-width: 2.5em; font-size: 15px; color: var(--app-muted); white-space: nowrap; }
+.count-page .cnt-in { width: 130px; }
 .count-page .cnt-in .p-inputtext { width: 100%; min-height: 44px; font-size: 16px; text-align: right; font-variant-numeric: tabular-nums; }
 .count-page .ct-diff { white-space: nowrap; } .count-page .ct-diff > span { margin-left: 6px; }
 .count-page .cd-plus { color: #15803d; } .count-page .cd-minus { color: #b91c1c; } .count-page .cd-none { color: var(--app-muted); }

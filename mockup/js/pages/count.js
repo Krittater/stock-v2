@@ -80,13 +80,16 @@
         return d > 0 ? { cls: 'cd-plus', text: '+' + t, word: 'เกิน' } : { cls: 'cd-minus', text: '−' + t, word: 'ขาด' };
       };
 
-      // commit เมื่อ blur — อ่านค่าดิบจากช่อง ไม่ผูกทุกการพิมพ์
+      // อ่านจากข้อความในช่อง (ไม่มี suffix — หน่วยอยู่นอกช่อง) แล้วตัดเครื่องหมาย , ออก; หลัง commit ซิงก์ช่องกลับด้วย key
+      const ver = reactive({});
+      const resync = (id) => { ver[id] = (ver[id] || 0) + 1; };
       const commit = (r, e) => {
-        const raw = String(e.originalEvent?.target?.value ?? '').replace(/[^0-9.]/g, '');
+        const id = r.p.id;
+        const raw = String(e.originalEvent.target.value ?? '').replace(/,/g, '').trim();
         const v = raw === '' ? null : Number(raw);
-        if (v !== null && !Number.isFinite(v)) return;
-        if (v === r.l.counted) return;
-        act((s) => Domain.setCounted(s, current.value.id, r.p.id, v));
+        if (v !== null && !Number.isFinite(v)) services.toast?.add({ severity: 'error', summary: 'ทำรายการไม่สำเร็จ', detail: 'ใส่จำนวนที่นับเป็นตัวเลข', life: 6000 });
+        else if (v !== r.l.counted) act((s) => { Domain.setCounted(s, current.value.id, id, v); });
+        resync(id);
       };
       const next = (e) => {
         const ins = [...document.querySelectorAll('.count-page .cnt-in input')];
@@ -125,7 +128,7 @@
       };
 
       return { state, isEng, whName, catLabel, sessions, current, summary, pct, openSession, dlg, whOpts, catOpts, itemCount, openDlg, start,
-        qInput, filter, FILTERS, first, rows, diffView, commit, next, cancelRound, closeRound, STATUS, Domain, go };
+        qInput, filter, FILTERS, first, rows, diffView, commit, ver, next, cancelRound, closeRound, STATUS, Domain, go };
     },
     template: `<div class="count-page">
       <page-header icon="pi-list-check" title="ตรวจนับ" subtitle="นับของจริงในคลัง เทียบกับยอดในระบบ แล้วปรับยอดให้ตรง">
@@ -200,9 +203,9 @@
             <p-column header="ในระบบ"><template #body="{ data: r }"><qty :n="r.l.system" :unit="r.p.unit" /></template></p-column>
             <p-column header="นับได้">
               <template #body="{ data: r }">
-                <p-inputnumber :modelValue="r.l.counted" :min="0" :minFractionDigits="0" :maxFractionDigits="r.p.unit === 'เมตร' ? 2 : 0"
-                  :suffix="' ' + Domain.unitAbbr(r.p.unit)" placeholder="ยังไม่นับ" :useGrouping="true" locale="en-US"
-                  :ariaLabel="'จำนวนที่นับได้ ' + r.p.name" class="cnt-in" @blur="commit(r, $event)" @keydown.enter="next" />
+                <div class="cnt-wrap"><p-inputnumber :key="r.p.id + ':' + (ver[r.p.id] || 0)" :modelValue="r.l.counted" :min="0" :minFractionDigits="0" :maxFractionDigits="2"
+                  placeholder="ยังไม่นับ" :useGrouping="true" locale="en-US"
+                  :ariaLabel="'จำนวนที่นับได้ ' + r.p.name" class="cnt-in" @blur="commit(r, $event)" @keydown.enter="next" /><span class="cnt-unit">{{ Domain.unitAbbr(r.p.unit) }}</span></div>
               </template>
             </p-column>
             <p-column header="ส่วนต่าง">
