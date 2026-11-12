@@ -31,11 +31,16 @@
     { role: 'engineer', label: 'วิศวกร' },
   ];
 
+  const creditsOpen = ref(false);
+  // แหล่งรูปทั้งหมด (img/credits.js) — ตารางใน dialog "เครดิตรูปภาพ"
+  const credits = Object.entries(window.ImageCredits || {}).map(([path, c]) => ({ path, file: path.split('/').pop(), ...c }));
+
   const AppSidebar = {
     setup() {
       const pop = ref();
       return {
         NAV, SETTINGS, ROLES, state, user, pop, isActive, setRole, reset,
+        openCredits: () => { pop.value.hide(); creditsOpen.value = true; },
         open: (i) => go(i.name, i.tab ? { tab: i.tab } : undefined),
         nameOf: (role) => state.users.find((u) => u.role === role)?.name,
       };
@@ -80,6 +85,7 @@
             <span>โหมดมืด</span>
             <p-toggleswitch v-model="state.ui.dark" />
           </label>
+          <p-button label="เครดิตรูปภาพ" icon="pi pi-images" severity="secondary" text class="w-full" @click="openCredits" />
           <p-button label="รีเซ็ตข้อมูลตัวอย่าง" icon="pi pi-refresh" severity="danger" outlined class="w-full"
             @click="pop.hide(); reset()" />
         </div>
@@ -153,7 +159,7 @@
       watch(() => route.name + JSON.stringify(route.query), () => { drawer.value = false; });
       watchEffect(() => document.documentElement.classList.toggle('app-dark', !!state.ui.dark));
       const page = computed(() => window.Pages[route.name] || Placeholder);
-      return { drawer, page, route };
+      return { drawer, page, route, creditsOpen, credits };
     },
     template: `<div class="shell">
       <aside class="sidebar-fixed"><app-sidebar /></aside>
@@ -162,6 +168,23 @@
         <app-topbar @menu="drawer = true" />
         <main class="content"><component :is="page" :key="route.name" /></main>
       </div>
+      <p-dialog v-model:visible="creditsOpen" header="เครดิตรูปภาพ" modal dismissableMask class="credits-dialog">
+        <p class="muted credits-note">รูปถ่ายจาก Wikimedia Commons (ย่อขนาด/ครอป/แปลงไฟล์จากต้นฉบับ) ใช้ตามสัญญาอนุญาตที่ระบุ · รูปวาดทำขึ้นเองสำหรับ mockup นี้</p>
+        <div class="credits-scroll">
+          <table class="credits-table">
+            <thead><tr><th>รูป</th><th>ไฟล์</th><th>ผู้สร้าง</th><th>สัญญาอนุญาต</th><th>แหล่งที่มา</th></tr></thead>
+            <tbody>
+              <tr v-for="c in credits" :key="c.path">
+                <td><span class="thumb" style="width:40px;height:40px;background:#fff"><img :src="c.path" alt="" loading="lazy"></span></td>
+                <td class="credits-file">{{ c.file }}</td>
+                <td>{{ c.author }}</td>
+                <td>{{ c.license }}</td>
+                <td><a v-if="c.source" :href="c.source" target="_blank" rel="noopener noreferrer">เปิดดู<span class="sr-only"> {{ c.title }} (แท็บใหม่)</span> <i class="pi pi-external-link" aria-hidden="true"></i></a><span v-else class="muted">—</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </p-dialog>
       <p-toast position="top-right" />
       <p-confirmdialog />
     </div>`,

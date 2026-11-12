@@ -81,6 +81,21 @@
       ['20x30 ซม.', '30x45 ซม.', '40x60 ซม.'], ['Safety+', 'Steelpro', 'Sign Pro', '3M', 'Brady']],
   ];
 
+  // รูปหมวด (path ใต้ mockup/, เครดิตใน img/credits.js) — หมวดแม่ใช้รูปเดียวกับหมวดย่อยตัวแทน
+  const P = (f) => 'img/photo/' + f, W = (f) => 'img/draw/' + f;
+  const CAT_IMAGE = {
+    'สายไฟ': W('wire-thw.svg'), 'สายไฟ THW': W('wire-thw.svg'), 'สายไฟ VAF': W('wire-vaf.svg'), 'สายไฟ VCT': W('wire-vct.svg'),
+    'สายสื่อสาร': P('lan.jpg'), 'สายแลน': P('lan.jpg'), 'สายโคแอกเชียล': W('coax.svg'), 'สายลำโพง': W('speaker-wire.svg'),
+    'ท่อและราง': W('emt-pipe.svg'), 'ท่อ EMT': W('emt-pipe.svg'), 'ท่อ PVC': W('pvc-pipe.svg'), 'รางเดินสาย': W('cable-tray.svg'),
+    'อุปกรณ์ไฟฟ้า': P('mcb.jpg'), 'เซอร์กิตเบรกเกอร์': P('mcb.jpg'), 'คอนแทคเตอร์และรีเลย์': W('contactor.svg'),
+    'กล่องและตู้': W('junction-box.svg'), 'กล่องพักสาย': W('junction-box.svg'), 'ตู้คอนซูเมอร์ยูนิต': W('consumer-unit.svg'), 'ตู้ควบคุมไฟฟ้า': P('cabinet.jpg'),
+    'สวิตช์และเต้ารับ': W('outlet.svg'), 'เต้ารับ': W('outlet.svg'), 'สวิตช์ไฟ': P('switch.jpg'), 'หน้ากากสวิตช์': W('switch-plate.svg'),
+    'โคมไฟ': W('downlight.svg'), 'หลอดไฟ LED': P('led-bulb.jpg'), 'โคมดาวน์ไลท์': W('downlight.svg'), 'โคมฟลัดไลท์': W('floodlight.svg'),
+    'วัสดุสิ้นเปลือง': W('tape.svg'), 'เทปพันสายไฟ': W('tape.svg'), 'เคเบิ้ลไทร์': W('cable-tie.svg'), 'ซิลิโคนและกาว': W('silicone.svg'),
+    'น็อตและอุปกรณ์': P('screw.jpg'), 'สกรูและน็อต': P('screw.jpg'), 'แคลมป์และรัดท่อ': W('pipe-clamp.svg'), 'พุกและเหล็กแขวน': W('anchor.svg'),
+    'ความปลอดภัย': P('hard-hat.jpg'), 'หมวกนิรภัย': P('hard-hat.jpg'), 'ถุงมือนิรภัย': P('gloves.jpg'), 'ป้ายเตือน': W('warning-sign.svg'),
+  };
+
   // [code, name, หมวดย่อย, ยี่ห้อ, รุ่น, หน่วย, ยอด W-BN (null = ตามกฎ), reorderPoint] — 6 แรกตามรูป, ที่เหลือจาก PDF 0.5
   const FIXED = [
     ['EL-WR-THW-0015-BK', 'สายไฟ THW 1.5 sq.mm สีดำ', 'สายไฟ THW', 'Thai Yazaki', 'THW 1x1.5 sq.mm', 'เมตร', 1250, 200],
@@ -126,13 +141,13 @@
     const topIds = {};
     TOPS.forEach(([name, icon, color], i) => {
       topIds[name] = nextCatId();
-      categories.push({ id: topIds[name], name, parentId: null, icon, color, order: i + 1, image: null });
+      categories.push({ id: topIds[name], name, parentId: null, icon, color, order: i + 1, image: CAT_IMAGE[name] });
     });
     const subIds = {};
     SUBS.forEach((sd, i) => {
       const parent = categories.find((c) => c.id === topIds[sd[0]]);
       subIds[sd[1]] = nextCatId();
-      categories.push({ id: subIds[sd[1]], name: sd[1], parentId: parent.id, icon: parent.icon, color: parent.color, order: i + 1, image: null });
+      categories.push({ id: subIds[sd[1]], name: sd[1], parentId: parent.id, icon: parent.icon, color: parent.color, order: i + 1, image: CAT_IMAGE[sd[1]] });
     });
 
     // คอมโบ ขนาด × สี × ยี่ห้อ ต่อหมวดย่อย → สลับลำดับ → แจกวนทีละหมวด (ลำดับไม่ขึ้นกับ n)

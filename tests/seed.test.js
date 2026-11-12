@@ -33,7 +33,7 @@ test('W-BN KPI numbers match the image', () => {
 test('deterministic', () => assert.deepEqual(Seed.build().products.slice(0, 50), s.products.slice(0, 50)));
 test('cart matches image', () => assert.deepEqual(s.cart.lines.map(l => l.qty), [100, 10, 30]));
 
-test('categories: 10 tops with 2-4 subs, mandatory subs, image null', () => {
+test('categories: 10 tops with 2-4 subs, mandatory subs', () => {
   const tops = s.categories.filter(c => !c.parentId);
   assert.equal(tops.length, 10);
   assert.equal(new Set(tops.map(c => c.color)).size, 10);
@@ -46,7 +46,6 @@ test('categories: 10 tops with 2-4 subs, mandatory subs, image null', () => {
     ['ท่อและราง', 'ท่อ EMT'], ['สวิตช์และเต้ารับ', 'เต้ารับ'], ['อุปกรณ์ไฟฟ้า', 'เซอร์กิตเบรกเกอร์'], ['วัสดุสิ้นเปลือง', 'เทปพันสายไฟ']]) {
     assert.ok(sub(t, n), `${t} > ${n}`);
   }
-  assert.ok(s.categories.every(c => c.image === null));
   assert.ok(s.products.every(p => p.image === null));
   assert.equal(s.counters.C, s.categories.length);
 });

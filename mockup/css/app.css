@@ -181,3 +181,14 @@ body {
 .kpi-value .num { font-size: 26px; font-weight: 700; }
 .kpi-caption { font-size: 14px; color: var(--app-muted); margin-top: 2px; }
 .kpi-chevron { position: absolute; top: 20px; right: 16px; font-size: 14px; color: var(--app-muted); }
+
+/* dialog เครดิตรูปภาพ */
+.credits-dialog { width: min(760px, calc(100vw - 32px)); }
+.credits-note { margin: 0 0 12px; font-size: 14px; }
+.credits-scroll { overflow-x: auto; }
+.credits-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 14px; }
+.credits-table th, .credits-table td { padding: 6px 8px; border-bottom: 1px solid var(--app-border); text-align: left; vertical-align: middle; }
+.credits-table th { color: var(--app-muted); font-weight: 600; white-space: nowrap; }
+.credits-file { font-family: var(--app-mono); white-space: nowrap; }
+.credits-table a { color: var(--p-primary-700); white-space: nowrap; display: inline-flex; align-items: center; min-height: 44px; gap: 4px; }
+.app-dark .credits-table a { color: var(--p-primary-300); }
