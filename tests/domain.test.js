@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const D = require('../mockup/js/domain.js');
+const Seed = require('../mockup/js/seed.js');
 
 function mini() {
   return {
@@ -76,4 +77,54 @@ test('parseSaved rejects garbage and old versions', () => {
   assert.equal(D.parseSaved('null'), null);
   assert.equal(D.parseSaved('{"version":0}'), null);
   assert.equal(D.parseSaved(JSON.stringify(mini())).version, 1);
+});
+
+const S = Seed.build();
+test('multi-token search', () => {
+  const r = D.searchProducts(S, { text: 'thw 1.5', whId: 'W-BN' });
+  assert.ok(r.length >= 2);
+  assert.equal(r[0].id, 'P-0001');
+  assert.ok(r.every(p => /THW/i.test(p.name + p.model) && /1\.5/.test(p.name + p.model)));
+});
+test('category filter includes sub-categories', () => {
+  const wire = S.categories.find(c => c.name === 'สายไฟ' && !c.parentId);
+  const r = D.searchProducts(S, { categoryId: wire.id, whId: 'W-BN' });
+  assert.ok(r.length > 0 && r.every(p => D.categoryPath(S, p.categoryId).startsWith('สายไฟ ›')));
+});
+test('tabs add up', () => {
+  const c = D.tabCounts(S, { whId: 'W-BN' });
+  assert.deepEqual(c, { all: 2000, in: 1985, low: 12, out: 3 });
+});
+test('kpis', () => assert.deepEqual(D.kpis(S, 'W-BN'), { low: 12, out: 3, pendingApprovals: 7, openPRs: 18 }));
+test('search over 2,000 stays fast', () => {
+  const t = performance.now();
+  for (let i = 0; i < 20; i++) D.searchProducts(S, { text: 'สาย', tab: 'in', whId: 'W-BN' });
+  assert.ok((performance.now() - t) / 20 < 25);
+});
+test('warehouseOptions marks counting warehouses', () => {
+  const s = Seed.build(); s.warehouses[1].countId = 'CC-0009';
+  const o = D.warehouseOptions(s, s.cart.lines);
+  assert.equal(o.at(-1).short, 'counting');
+  assert.equal(o.find(x => x.wh.id === 'W-BN').short, 'full');
+});
+test('warehouseOptions partial/none ordering and counts', () => {
+  const s = Seed.build({ products: 50 });
+  const o = D.warehouseOptions(s, [{ productId: 'P-0001', qty: 1e9 }]);
+  assert.ok(o.every(x => x.total === 1 && ['none', 'partial'].includes(x.short)));
+  assert.ok(o.every(x => x.missing === 1));
+});
+test('search index follows product edits', () => {
+  const s = Seed.build({ products: 50 });
+  const p = s.products[0];
+  assert.equal(D.searchProducts(s, { text: 'zzqq', whId: 'W-BN' }).length, 0);
+  p.brand = 'ZZQQ';
+  assert.equal(D.searchProducts(s, { text: 'zzqq', whId: 'W-BN' })[0].id, p.id);
+});
+test('imageOf falls back product → sub-category → parent → null', () => {
+  const s = Seed.build({ products: 50 }); const p = s.products[0];
+  const sub = s.categories.find(c => c.id === p.categoryId); const parent = s.categories.find(c => c.id === sub.parentId);
+  p.image = null; sub.image = null; parent.image = 'img/a.jpg'; assert.equal(D.imageOf(s, p), 'img/a.jpg');
+  sub.image = 'img/b.jpg'; assert.equal(D.imageOf(s, p), 'img/b.jpg');
+  p.image = 'img/c.jpg'; assert.equal(D.imageOf(s, p), 'img/c.jpg');
+  parent.image = sub.image = p.image = null; assert.equal(D.imageOf(s, p), null);
 });

@@ -60,9 +60,106 @@
     }
   }
 
+  const catOf = (state, id) => state.categories.find((c) => c.id === id);
+
+  function categoryPath(state, categoryId) {
+    const c = catOf(state, categoryId);
+    if (!c) return '';
+    const parent = c.parentId && catOf(state, c.parentId);
+    return parent ? `${parent.name} › ${c.name}` : c.name;
+  }
+
+  function descendantIds(state, categoryId) {
+    const ids = new Set([categoryId]);
+    state.categories.forEach((c) => { if (c.parentId === categoryId) ids.add(c.id); });
+    return ids; // ponytail: 2 ระดับตาม Shared Types; ซ้อนลึกกว่านี้ต้องวนซ้ำ
+  }
+
+  function categoryImage(state, categoryId) {
+    const c = catOf(state, categoryId);
+    if (!c) return null;
+    if (c.image) return c.image;
+    const parent = c.parentId && catOf(state, c.parentId);
+    return (parent && parent.image) || null;
+  }
+  const imageOf = (state, product) => product.image || categoryImage(state, product.categoryId);
+
+  // แคช haystack ต่อ product เก็บ src คู่กัน — ถ้าชื่อ/รหัส/ยี่ห้อ/รุ่น/หมวดเปลี่ยน src ไม่ตรง จึงสร้างใหม่
+  const hayCache = new WeakMap();
+  function hayOf(p, path) {
+    const src = [p.name, p.code, p.brand, p.model, path].join(' ');
+    let e = hayCache.get(p);
+    if (!e || e.src !== src) { e = { src, hay: src.toLowerCase() }; hayCache.set(p, e); }
+    return e.hay;
+  }
+
+  function filterProducts(state, q) {
+    const tokens = (q.text || '').toLowerCase().split(/\s+/).filter(Boolean);
+    const cats = q.categoryId ? descendantIds(state, q.categoryId) : null;
+    const paths = new Map();
+    const out = [];
+    for (const p of state.products) {
+      if (cats && !cats.has(p.categoryId)) continue;
+      if (tokens.length) {
+        let path = paths.get(p.categoryId);
+        if (path === undefined) paths.set(p.categoryId, (path = categoryPath(state, p.categoryId)));
+        const hay = hayOf(p, path);
+        if (!tokens.every((t) => hay.includes(t))) continue;
+      }
+      out.push(p);
+    }
+    return { out, tokens };
+  }
+
+  function searchProducts(state, q) {
+    const { out, tokens } = filterProducts(state, q);
+    const tab = q.tab && q.tab !== 'all' ? q.tab : null;
+    const res = tab ? out.filter((p) => stockStatus(state, p, q.whId) === tab) : out;
+    const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    if (!tokens.length) return res.sort(byId);
+    const text = tokens.join(' ');
+    const rank = (p) => { const n = p.name.toLowerCase(); return n.startsWith(text) ? 0 : n.includes(text) ? 1 : 2; };
+    return res.map((p) => [rank(p), p]).sort((a, b) => a[0] - b[0] || byId(a[1], b[1])).map((x) => x[1]);
+  }
+
+  function tabCounts(state, q) {
+    const c = { all: 0, in: 0, low: 0, out: 0 };
+    for (const p of filterProducts(state, q).out) { c.all++; c[stockStatus(state, p, q.whId)]++; }
+    return c;
+  }
+
+  function kpis(state, whId) {
+    let low = 0, out = 0;
+    for (const p of state.products) {
+      const s = stockStatus(state, p, whId);
+      if (s === 'low') low++; else if (s === 'out') out++;
+    }
+    return {
+      low, out,
+      pendingApprovals: state.docs.filter((d) => d.type === 'issue' && d.status === 'pending').length,
+      openPRs: state.prs.filter((r) => r.status === 'open').length,
+    };
+  }
+
+  function warehouseOptions(state, lines) {
+    const RANK = { full: 0, partial: 1, none: 2, counting: 3 };
+    return state.warehouses.map((wh, i) => {
+      const total = lines.length;
+      let missing = 0, zero = 0;
+      for (const l of lines) {
+        const have = qtyOf(state, l.productId, wh.id);
+        if (l.qty > have) missing++;
+        if (have <= 0) zero++;
+      }
+      const short = wh.countId ? 'counting' : missing === 0 ? 'full' : zero === total ? 'none' : 'partial';
+      return { wh, short, missing, total, i };
+    }).sort((a, b) => RANK[a.short] - RANK[b.short] || a.i - b.i).map(({ i, ...o }) => o);
+  }
+
   const Domain = {
     DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyOf, totalQty,
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
+    categoryPath, descendantIds, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
   };
   root.Domain = Domain;
   if (typeof module !== 'undefined') module.exports = Domain;
