@@ -231,3 +231,66 @@ test('receive validation, reject, pending PR applied on confirm, bad initial lea
   assert.throws(() => D.addProduct(s, { name: 'ใหม่', unit: 'ตัว', categoryId: cat, initial: { whId: 'W-BN', qty: 0 } }, store), { code: 'qty_invalid' });
   assert.equal(s.products.length, n);
 });
+
+const base6 = () => { const s = Seed.build({ products: 50 }); return [s, (u) => s.users.find((x) => x.role === u)]; };
+test('full issue deducts stock', () => {
+  const [s, U] = base6();
+  const r = D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0001', qty: 100 }] }, U('engineer'));
+  assert.equal(r.outcome, 'full'); assert.match(r.doc.id, /^REQ-69\d{4}$/);
+  assert.equal(D.qtyOf(s, 'P-0001', 'W-BN'), 1150); assert.equal(r.prs.length, 0);
+  assert.equal(r.doc.lines[0].issued, 100); assert.equal(r.doc.status, 'posted');
+});
+test('shortage → partial + PR, not an error', () => {
+  const [s, U] = base6();
+  const r = D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0002', qty: 400 }] }, U('engineer'));
+  assert.equal(r.outcome, 'partial'); assert.equal(r.doc.lines[0].issued, 342);
+  assert.equal(r.prs[0].qty, 58); assert.equal(D.qtyOf(s, 'P-0002', 'W-BN'), 0);
+  assert.equal(r.prs[0].reqId, r.doc.id); assert.deepEqual(r.doc.prIds, [r.prs[0].id]); assert.ok(s.prs.includes(r.prs[0]));
+});
+test('nothing in stock → waiting', () => {
+  const [s, U] = base6();
+  const r = D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0006', qty: 5 }] }, U('engineer'));
+  assert.equal(r.outcome, 'waiting'); assert.equal(r.prs[0].qty, 5);
+});
+test('approval flow', () => {
+  const [s, U] = base6(); s.settings.requireApproval = true;
+  const r = D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0001', qty: 10 }] }, U('engineer'));
+  assert.equal(r.outcome, 'pending'); assert.equal(D.qtyOf(s, 'P-0001', 'W-BN'), 1250);
+  assert.throws(() => D.approveIssue(s, r.doc.id, U('store'), true), { code: 'forbidden' });
+  assert.equal(D.approveIssue(s, r.doc.id, U('head'), true).outcome, 'full');
+  assert.equal(D.qtyOf(s, 'P-0001', 'W-BN'), 1240);
+  assert.throws(() => D.approveIssue(s, r.doc.id, U('head'), true), { code: 'doc_not_pending' });
+  assert.equal(D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0001', qty: 1 }] }, U('head')).outcome, 'full');
+});
+test('reject and counting during approval', () => {
+  const [s, U] = base6(); s.settings.requireApproval = true;
+  const mk = () => D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0001', qty: 10 }] }, U('engineer')).doc;
+  const d1 = mk(), d2 = mk();
+  const r = D.approveIssue(s, d1.id, U('head'), false);
+  assert.equal(r.outcome, 'rejected'); assert.equal(d1.status, 'rejected'); assert.equal(D.qtyOf(s, 'P-0001', 'W-BN'), 1250);
+  s.warehouses.find((w) => w.id === 'W-BN').countId = 'CC-0001';
+  assert.throws(() => D.approveIssue(s, d2.id, U('head'), true), { code: 'wh_counting' });
+  assert.equal(d2.status, 'pending');
+});
+test('guards', () => {
+  const [s, U] = base6(); const e = U('engineer'); const L = [{ productId: 'P-0005', qty: 1 }];
+  assert.throws(() => D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [] }, e), { code: 'lines_empty' });
+  assert.throws(() => D.issue(s, { whId: '', jobId: 'J-25-010', lines: L }, e), { code: 'wh_required' });
+  assert.throws(() => D.issue(s, { whId: 'W-BN', jobId: '', lines: L }, e), { code: 'job_required' });
+  assert.throws(() => D.issue(s, { whId: 'W-BN', jobId: 'J-24-008', lines: L }, e), { code: 'job_closed' });
+  assert.throws(() => D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0005', qty: 1.5 }] }, e), { code: 'qty_integer' });
+  assert.throws(() => D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'NOPE', qty: 1 }] }, e), { code: 'prod_missing' });
+  const before = D.qtyOf(s, 'P-0005', 'W-BN'), nDocs = s.docs.length;
+  assert.throws(() => D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0005', qty: 1 }, { productId: 'P-0005', qty: 0 }] }, e), { code: 'qty_invalid' });
+  assert.equal(D.qtyOf(s, 'P-0005', 'W-BN'), before); assert.equal(s.docs.length, nDocs);
+  s.warehouses.find((w) => w.id === 'W-BN').countId = 'CC-0001';
+  assert.throws(() => D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: L }, e), { code: 'wh_counting' });
+});
+test('addJob and similarJobs', () => {
+  const [s] = base6();
+  assert.equal(D.addJob(s, { name: 'ติดตั้งแอร์ ห้องประชุม' }).id, 'J-26-001');
+  assert.throws(() => D.addJob(s, { name: ' ' }), { code: 'job_name' });
+  assert.deepEqual(D.similarJobs(s, 'ซ่อมบำรุง').map((j) => j.id), ['J-25-002']);
+  assert.deepEqual(D.similarJobs(s, 'ปรับปรุงห้องควบคุม โรงงาน C'), []); // closed job excluded
+  assert.deepEqual(D.similarJobs(s, 'ซ่อมบำรุงประจำปี'), []); // exact excluded
+});

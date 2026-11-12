@@ -212,13 +212,23 @@
     return { movedProducts: prods.length };
   }
 
-  function findSimilar(state, name) {
+  function similarByName(items, name) {
     const q = norm(name);
     if (q.length < 3) return [];
-    return state.products.filter((p) => {
+    return items.filter((p) => {
       const n = norm(p.name);
       return n !== q && n.length >= 3 && (n.includes(q) || q.includes(n));
     }).slice(0, 5);
+  }
+  const findSimilar = (state, name) => similarByName(state.products, name);
+  const similarJobs = (state, name) => similarByName(state.jobs.filter((j) => j.open), name);
+
+  function addJob(state, { name, customer } = {}) {
+    const n = String(name ?? '').trim().replace(/s+/g, ' ');
+    if (!n) throw new DomainError('job_name', 'ใส่ชื่องานก่อน');
+    const job = { id: nextId(state, 'J'), name: n, customer: customer || '', open: true };
+    state.jobs.push(job);
+    return job;
   }
 
   function checkProduct(state, p, selfId) {
@@ -296,6 +306,60 @@
     return doc;
   }
 
+  const needsApproval = (state, actor) => !!state.settings.requireApproval && actor.role !== 'head';
+
+  // ตัดยอดตามที่มีจริง ส่วนขาดเปิด PR; ตรวจครบแล้วก่อนเรียก จึงไม่ throw กลางทาง
+  function postIssue(state, doc) {
+    const prs = [];
+    let short = 0, got = 0;
+    for (const l of doc.lines) {
+      const k = stockKey(l.productId, doc.whId);
+      const have = state.stock[k] || 0;
+      l.issued = Math.min(l.qty, have);
+      state.stock[k] = have - l.issued;
+      if (l.issued > 0) got++;
+      if (l.issued < l.qty) {
+        short++;
+        const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: doc.whId, qty: +(l.qty - l.issued).toFixed(2), received: 0, status: 'open', reqId: doc.id };
+        state.prs.push(pr); doc.prIds.push(pr.id); prs.push(pr);
+      }
+    }
+    doc.status = 'posted';
+    return { doc, outcome: !short ? 'full' : got ? 'partial' : 'waiting', prs };
+  }
+
+  function issue(state, input, actor) {
+    const { whId, jobId, lines, note } = input;
+    if (!lines || !lines.length) throw new DomainError('lines_empty', 'เพิ่มของอย่างน้อย 1 รายการ');
+    if (!whId) throw new DomainError('wh_required', 'เลือกคลังที่เบิกของก่อน');
+    const job = jobId && state.jobs.find((j) => j.id === jobId);
+    if (!job) throw new DomainError('job_required', 'เลือกงาน / โครงการก่อน');
+    if (!job.open) throw new DomainError('job_closed', 'งานนี้ปิดแล้ว เลือกงานอื่น');
+    assertWarehouseOpen(state, whId);
+    for (const l of lines) {
+      const p = state.products.find((x) => x.id === l.productId);
+      if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
+      validateQty(l.qty, p.unit);
+    }
+    const pending = needsApproval(state, actor);
+    const doc = {
+      id: nextId(state, 'REQ'), type: 'issue', status: pending ? 'pending' : 'posted', whId, jobId,
+      lines: lines.map((l) => ({ productId: l.productId, qty: l.qty })), note: note ?? '', by: actor.id,
+      at: new Date().toISOString(), prIds: [],
+    };
+    state.docs.push(doc);
+    return pending ? { doc, outcome: 'pending', prs: [] } : postIssue(state, doc);
+  }
+
+  function approveIssue(state, docId, actor, approve) {
+    if (actor.role !== 'head') throw new DomainError('forbidden', 'เฉพาะหัวหน้าอนุมัติได้');
+    const doc = state.docs.find((d) => d.id === docId);
+    if (!doc || doc.type !== 'issue' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
+    if (!approve) { doc.status = 'rejected'; return { doc, outcome: 'rejected', prs: [] }; }
+    assertWarehouseOpen(state, doc.whId);
+    return postIssue(state, doc);
+  }
+
   function updateProduct(state, id, patch) {
     const p = state.products.find((x) => x.id === id);
     if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้านี้');
@@ -312,7 +376,7 @@
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
     addCategory, updateCategory, deleteCategory, productCounts, findSimilar, addProduct, updateProduct,
-    receive, confirmReceipt, openPRs,
+    receive, confirmReceipt, openPRs, needsApproval, issue, approveIssue, addJob, similarJobs,
   };
   root.Domain = Domain;
   if (typeof module !== 'undefined') module.exports = Domain;
