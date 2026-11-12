@@ -14,13 +14,19 @@
   });
 
   window.ProductDialog = {
-    props: { visible: Boolean, initialName: String },
-    emits: ['update:visible', 'created'],
+    props: { visible: Boolean, initialName: String, product: Object }, // product = โหมดแก้ไข (emit 'saved')
+    emits: ['update:visible', 'created', 'saved'],
     setup(props, { emit }) {
       const f = reactive(blank());
       const newCat = ref(null); // null = ปิด, string = กำลังพิมพ์ชื่อหมวดใหม่
       const catSelect = ref();
-      watch(() => props.visible, (v) => { if (v) { Object.assign(f, blank(props.initialName)); newCat.value = null; } });
+      const edit = computed(() => !!props.product);
+      const fromProduct = (p) => {
+        const known = UNITS.includes(p.unit);
+        return { ...blank(p.name), brand: p.brand === '-' ? '' : (p.brand || ''), model: p.model || '', code: p.code, categoryId: p.categoryId,
+          unitPick: known ? p.unit : OTHER, unitOther: known ? '' : p.unit, reorderPoint: p.reorderPoint };
+      };
+      watch(() => props.visible, (v) => { if (v) { Object.assign(f, props.product ? fromProduct(props.product) : blank(props.initialName)); newCat.value = null; } });
 
       const unit = computed(() => (f.unitPick === OTHER ? f.unitOther.trim() : f.unitPick) || '');
       // หมวดแม่เป็นกลุ่ม ตัวเลือกคือหมวดย่อย (หมวดแม่ที่ยังไม่มีหมวดย่อยเลือกตัวเองได้)
@@ -32,15 +38,15 @@
         });
       });
       const openWarehouses = computed(() => state.warehouses.filter((w) => !w.countId));
-      const dup = computed(() => norm(f.name) && state.products.find((p) => norm(p.name) === norm(f.name)));
-      const similar = computed(() => (dup.value ? [] : Domain.findSimilar(state, f.name)));
+      const dup = computed(() => norm(f.name) && state.products.find((p) => p.id !== props.product?.id && norm(p.name) === norm(f.name)));
+      const similar = computed(() => (dup.value || edit.value ? [] : Domain.findSimilar(state, f.name)));
       const missing = computed(() => {
         const m = [];
         if (!norm(f.name)) m.push('ชื่อสินค้า');
         if (!f.categoryId) m.push('หมวดหมู่');
         if (!unit.value) m.push('หน่วย');
-        if (f.hasStock && !f.whId) m.push('คลังที่มีของ');
-        if (f.hasStock && !(f.qty > 0)) m.push('จำนวนที่มีอยู่ (มากกว่า 0)');
+        if (!edit.value && f.hasStock && !f.whId) m.push('คลังที่มีของ');
+        if (!edit.value && f.hasStock && !(f.qty > 0)) m.push('จำนวนที่มีอยู่ (มากกว่า 0)');
         return m;
       });
       const stockNote = computed(() => (user.value.role === 'engineer'
@@ -55,6 +61,11 @@
         const cat = act((s) => Domain.addCategory(s, { name: newCat.value }), (c) => `สร้างหมวด "${c.name}" แล้ว`);
         if (cat) { f.categoryId = cat.id; newCat.value = null; }
       };
+      const save = () => {
+        const patch = { name: f.name, brand: f.brand.trim(), model: f.model.trim(), code: f.code, categoryId: f.categoryId, unit: unit.value, reorderPoint: f.reorderPoint ?? 0 };
+        const p = act((s) => Domain.updateProduct(s, props.product.id, patch), (x) => `บันทึก ${x.name} แล้ว`);
+        if (p) { emit('saved', p); close(); }
+      };
       const create = () => {
         const input = {
           name: f.name, brand: f.brand.trim(), model: f.model.trim(), code: f.code, categoryId: f.categoryId,
@@ -65,11 +76,11 @@
         if (r) { emit('created', r.product, { existing: false, receipt: r.receipt }); close(); }
       };
       return { f, UNITS, OTHER, unit, catGroups, catSelect, newCat, openWarehouses, dup, similar, missing, stockNote, nextId,
-        close, use, startNewCat, saveNewCat, create };
+        edit, close, use, startNewCat, saveNewCat, create, save };
     },
-    template: `<p-dialog :visible="visible" @update:visible="$emit('update:visible', $event)" header="สร้างสินค้าใหม่" modal
+    template: `<p-dialog :visible="visible" @update:visible="$emit('update:visible', $event)" :header="edit ? 'แก้ไขวัสดุ' : 'สร้างสินค้าใหม่'" modal
       dismissableMask class="product-dialog" :draggable="false">
-      <form class="pd-form" @submit.prevent="missing.length || dup || create()">
+      <form class="pd-form" @submit.prevent="missing.length || dup || (edit ? save() : create())">
         <div class="field">
           <label for="pd-name">ชื่อสินค้า <span class="req">*</span></label>
           <p-inputtext id="pd-name" v-model="f.name" placeholder="เช่น น็อตสแตนเลส M8" autocomplete="off" :invalid="!!dup" fluid autofocus />
@@ -123,11 +134,11 @@
           <p-inputnumber inputId="pd-rp" v-model="f.reorderPoint" :min="0" :maxFractionDigits="unit === 'เมตร' ? 2 : 0" placeholder="0" fluid />
           <small class="muted pd-hint">เตือนเมื่อเหลือน้อยกว่า</small>
         </div>
-        <label class="switch-row pd-switch">
+        <label v-if="!edit" class="switch-row pd-switch">
           <span>มีของนี้อยู่ในคลังแล้ว</span>
           <p-toggleswitch v-model="f.hasStock" />
         </label>
-        <div v-if="f.hasStock" class="pd-stock">
+        <div v-if="f.hasStock && !edit" class="pd-stock">
           <div class="pd-grid">
             <div class="field">
               <label id="pd-wh-l">คลัง <span class="req">*</span></label>
@@ -146,7 +157,7 @@
           <p v-if="missing.length" class="pd-missing">ยังขาด: {{ missing.join(' · ') }}</p>
           <div class="pd-actions">
             <p-button label="ยกเลิก" severity="secondary" outlined @click="close" />
-            <p-button label="สร้าง" icon="pi pi-check" :disabled="!!missing.length || !!dup" @click="create" />
+            <p-button :label="edit ? 'บันทึก' : 'สร้าง'" icon="pi pi-check" :disabled="!!missing.length || !!dup" @click="edit ? save() : create()" />
           </div>
         </div>
       </template>
