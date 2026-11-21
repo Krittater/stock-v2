@@ -4,6 +4,7 @@ const D = require('./_load.js');
 
 const SHELVES = [{ code: 'ทั่วไป', active: true }, { code: 'QC', active: true, qc: true }];
 const yy = String(new Date().getFullYear()).slice(-2);
+const today = D.today;
 function mini() {
   return {
     version: 3,
@@ -35,7 +36,7 @@ test('JB-AC1 สร้างงาน: รหัส J-YY-NNN รันต่อ�
   const j = D.addJob(s, { name: 'ติดตั้งแอร์ ห้องประชุม' }, eng);
   assert.equal(j.id, `J-${yy}-001`);
   assert.equal(D.addJob(s, { name: 'งานสอง' }, eng).id, `J-${yy}-002`);
-  assert.deepEqual([j.ownerId, j.open, j.start], ['U-3', true, new Date().toISOString().slice(0, 10)]);
+  assert.deepEqual([j.ownerId, j.open, j.start], ['U-3', true, today()]);
   assert.ok(s.audit.some((a) => a.action === 'job.add' && a.ref === j.id));
 });
 
@@ -67,7 +68,7 @@ test('JB-AC5 ปิดใบเบิกค้างแล้วปิดงา�
   D.closeIssue(s, a.id, head);
   const { job } = D.closeJob(s, 'J-25-010', head);
   assert.equal(job.open, false); assert.ok(job.closedAt);
-  assert.equal(job.due, new Date().toISOString().slice(0, 10));
+  assert.equal(job.due, today());
   assert.ok(s.audit.some((x) => x.action === 'job.close' && x.text.includes('ปิดโดย หัวหน้า')));
 });
 
@@ -85,6 +86,7 @@ test('JB-AC7 เปิดงานอีกครั้ง → เบิกไ�
   assert.deepEqual([j.open, j.closedAt], [true, null]);
   assert.ok(s.audit.some((x) => x.action === 'job.reopen'));
   assert.ok(iss(s, 1));
+  const n = s.audit.length; D.reopenJob(s, 'J-25-010', head); assert.equal(s.audit.length, n); // เปิดอยู่แล้ว no-op
   const c1 = D.cloneJob(s, 'J-25-010', eng), c2 = D.cloneJob(s, 'J-25-010', eng);
   assert.equal(c1.name, 'อาคารสำนักงาน โซน A (ใหม่)'); assert.equal(c2.name, 'อาคารสำนักงาน โซน A (ใหม่ 2)');
   assert.equal(c1.customer, 'ก');
@@ -150,4 +152,16 @@ test('cancelIssue: ยังไม่จ่ายเลย → cancelled + ย�
   s.settings.requireApproval = true;
   const p = D.issue(s, { whId: 'W-BN', jobId: 'J-25-002', lines: [{ productId: 'P-0001', qty: 1 }] }, eng).doc;
   assert.equal(p.status, 'pending'); D.cancelIssue(s, p.id, eng); assert.equal(p.fill, 'cancelled');
+});
+
+test('cancelIssue ใบรออนุมัติ → rejected ออกจากคิว อนุมัติไม่ได้ · ไม่บล็อกปิดงาน', () => {
+  const s = mini(); s.settings.requireApproval = true;
+  const p = D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0001', qty: 1 }] }, eng).doc;
+  assert.throws(() => D.closeJob(s, 'J-25-010', head), { code: 'job_open_docs' });
+  D.cancelIssue(s, p.id, eng);
+  assert.deepEqual([p.status, p.fill], ['rejected', 'cancelled']);
+  assert.equal(s.docs.filter((d) => d.status === 'pending').length, 0);
+  assert.throws(() => D.approveIssue(s, p.id, head, true), { code: 'doc_not_pending' });
+  assert.equal(D.qtyOf(s, 'P-0001', 'W-BN'), 100);
+  assert.equal(D.closeJob(s, 'J-25-010', head).job.open, false);
 });

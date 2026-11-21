@@ -13,6 +13,8 @@
   // ใบเบิกที่ลงยอดแล้วดูจากบรรทัด: ครบทุกบรรทัด = จ่ายแล้ว · ไม่ได้ของเลย = รอของเข้า · นอกนั้น = จ่ายบางส่วน
   function statusOf(d) {
     if (d.type === 'issue' && d.status === 'posted') {
+      if (d.fill === 'closed') return ['ปิดใบเบิกแล้ว', 'tone-gray'];
+      if (d.fill === 'cancelled') return ['ยกเลิกแล้ว', 'tone-gray'];
       if (d.fill === 'ready') return ['รอของเข้า — กันของไว้แล้ว', 'tone-blue'];
       const got = d.lines.map((l) => l.issued ?? l.qty); // ใบเก่าไม่มี issued = จ่ายครบ
       if (d.lines.every((l, i) => got[i] >= l.qty)) return ['จ่ายแล้ว', 'tone-green'];

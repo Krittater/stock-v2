@@ -3,7 +3,7 @@
   const D = root.Domain || require('../domain.js');
   const { DomainError, norm, similarity, log } = D;
   const r2 = (n) => +n.toFixed(2);
-  const today = () => new Date().toISOString().slice(0, 10);
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const jobOf = (state, id) => {
     const j = state.jobs.find((x) => x.id === id);
     if (!j) throw new DomainError('job_missing', 'ไม่พบงานนี้');
@@ -100,6 +100,7 @@
 
   function reopenJob(state, jobId, actor) {
     const job = jobOf(state, jobId);
+    if (job.open) return job; // เปิดอยู่แล้ว ไม่ลงประวัติซ้ำ
     job.open = true; job.closedAt = null;
     log(state, actor, 'job.reopen', jobId, `เปิดงาน ${job.name} อีกครั้ง โดย ${nameOf(state, actor)}`);
     return job;
@@ -141,12 +142,13 @@
     if (!ok) throw new DomainError('doc_not_open', 'ใบเบิกนี้ยกเลิกไม่ได้');
     if (doc.lines.some((l) => (l.issued || 0) > 0)) throw new DomainError('doc_issued', 'ใบเบิกนี้จ่ายของไปแล้ว ยกเลิกไม่ได้ ใช้ "ปิดใบเบิก" แทน');
     const prs = cancel ? cancelPRs(state, [doc], actor) : [];
+    if (doc.status === 'pending') doc.status = 'rejected'; // ออกจากคิวรออนุมัติ
     doc.fill = 'cancelled';
     release(state, doc);
     log(state, actor, 'issue.cancel', doc.id, `ยกเลิกใบเบิก ${doc.id} โดย ${nameOf(state, actor)}`);
     return { doc, cancelledPRs: prs };
   }
 
-  Object.assign(D, { similarJobs, addJob, updateJob, openDocsOf, closeJobCheck, closeJob, reopenJob, cloneJob, closeIssue, cancelIssue });
+  Object.assign(D, { today, similarJobs, addJob, updateJob, openDocsOf, closeJobCheck, closeJob, reopenJob, cloneJob, closeIssue, cancelIssue });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);
