@@ -45,7 +45,7 @@
         let list = Domain.searchProducts(state, { text: text.value, categoryId: categoryId.value, whId: cart.value.whId });
         if (brands.value.length) list = list.filter((p) => brands.value.includes(p.brand));
         if (hideAdded.value) list = list.filter((p) => !inCart.value.has(p.id));
-        return list.map((p) => [p, Domain.stockStatus(state, p, cart.value.whId)]);
+        return list.map((p) => [p, Domain.stockStatus(state, p, cart.value.whId, { byAvailable: true })]);
       });
       const counts = computed(() => {
         const c = { all: base.value.length, in: 0, low: 0, out: 0 };
@@ -105,7 +105,7 @@
 
       const detail = ref(null);
       const detailWh = computed(() => detail.value && state.warehouses.map((w) => ({
-        w, qty: Domain.available(state, detail.value.id, w.id), pending: Domain.pendingOpening(state, detail.value.id, w.id), status: w.countId ? 'counting' : Domain.stockStatus(state, detail.value, w.id),
+        w, qty: Domain.available(state, detail.value.id, w.id), pending: Domain.pendingOpening(state, detail.value.id, w.id), status: w.countId ? 'counting' : Domain.stockStatus(state, detail.value, w.id, { byAvailable: true }),
       })));
       const detailPRs = computed(() => detail.value && state.prs.filter((r) => r.productId === detail.value.id && r.status === 'open'));
       const addFromDetail = () => { add(detail.value); detail.value = null; };

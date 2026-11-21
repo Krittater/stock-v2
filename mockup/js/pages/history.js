@@ -22,7 +22,7 @@
   function linkOf(a) {
     const r = a.ref || '';
     if (a.action === 'count.queue' || a.action === 'opening.submit' || a.action === 'opening.confirm') return ['approvals', { tab: 'cc' }];
-    if (a.action === 'opening.post' || a.action === 'opening.approve' || a.action === 'opening.reject') return null; // ref เป็นรหัสสินค้า ไม่มีหน้าที่แสดงรายการนี้
+    if (a.action === 'opening.post' || a.action === 'opening.approve' || a.action === 'opening.reject') return ['issue', { q: state.products.find((p) => p.id === r)?.code || r }]; // ref เป็นรหัสสินค้า → ค้นด้วยรหัสที่ค้นได้ในหน้าเบิก (เห็นยอดต่อคลัง)
     if (a.action.startsWith('count.')) return ['count', { id: r }];
     if (a.action === 'opening.import' || a.action === 'opening.lock') return ['opening'];
     if (/^J-/.test(r)) return ['jobs', { id: r }];
