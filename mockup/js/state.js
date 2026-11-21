@@ -53,8 +53,9 @@
       acceptProps: { label: 'รีเซ็ต', severity: 'danger' },
       accept: () => {
         const ui = { ...state.ui };
+        const fresh = Seed.build(); // สร้างก่อนลบ ถ้า build พังข้อมูลเดิมยังอยู่
         for (const k of Object.keys(state)) delete state[k];
-        Object.assign(state, Seed.build(), { ui });
+        Object.assign(state, fresh, { ui });
         resetCount.value++;
         saveSoon();
         toast('success', 'รีเซ็ตข้อมูลตัวอย่างแล้ว', 3000);

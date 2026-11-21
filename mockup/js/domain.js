@@ -109,7 +109,10 @@
     if (!raw) return null;
     try {
       const s = JSON.parse(raw);
-      return s && s.version === 3 ? s : null;
+      // ต้องมีผู้ใช้ปัจจุบันและชุดข้อมูลหลักครบ ไม่งั้นหน้าจอพัง (user undefined) → ใช้ seed ใหม่แทน
+      const ok = s && s.version === 3 && Array.isArray(s.users) && s.users.some((u) => u.id === s.currentUserId)
+        && ['docs', 'products', 'warehouses', 'audit'].every((k) => Array.isArray(s[k]));
+      return ok ? s : null;
     } catch (e) {
       return null;
     }

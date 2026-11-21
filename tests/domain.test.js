@@ -79,6 +79,11 @@ test('parseSaved rejects garbage and old versions', () => {
   assert.equal(D.parseSaved('null'), null);
   assert.equal(D.parseSaved('{"version":0}'), null);
   assert.equal(D.parseSaved(JSON.stringify(mini())).version, 3);
+  const full = { version: 3, currentUserId: 'U1', users: [{ id: 'U1' }], docs: [], products: [], warehouses: [], audit: [] };
+  assert.equal(D.parseSaved(JSON.stringify(full)).version, 3);
+  assert.equal(D.parseSaved(JSON.stringify({ version: 3 })), null); // ไม่มี users
+  assert.equal(D.parseSaved(JSON.stringify({ ...full, currentUserId: 'X' })), null); // ผู้ใช้ปัจจุบันไม่อยู่ในรายชื่อ
+  for (const k of ['docs', 'products', 'warehouses', 'audit']) assert.equal(D.parseSaved(JSON.stringify({ ...full, [k]: undefined })), null, k);
 });
 
 const S = Seed.build();

@@ -279,7 +279,7 @@
     D.issue(s, { whId: 'W-BN', jobId: 'J-25-002', lines: [{ productId: 'P-0007', qty: 35 }], note: 'ตัดสายจากม้วนที่ไซต์' }, eng).doc.at = at(8);
     D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0006', qty: 20 }], note: 'เทปหมด รอของเข้า' }, eng).doc.at = at(9);
     D.submitOpening(s, { productId: 'P-0023', whId: 'W-BN', qty: 40, kind: 'opening' }, eng).cc.at = at(10);
-    s.audit.forEach((x, i) => { x.at = at(8 + i); });
+    s.audit.forEach((x, i) => { x.at = iso(1, 8 + Math.min(i, 14)); }); // ไม่ให้ชั่วโมงเกิน 23 จนวันเลื่อน
     s.notifs = [];
   }
   function loadDomain() { // Node: โหลดเหมือน tests/_load.js

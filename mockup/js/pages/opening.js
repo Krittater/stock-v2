@@ -62,7 +62,7 @@
             <p-toggleswitch :modelValue="locked" @update:modelValue="setLock" />
           </label>
           <p v-if="locked" class="op-locked" role="status"><i class="pi pi-lock" aria-hidden="true"></i> {{ LOCKED }}</p>
-          <p class="muted op-cols">คอลัมน์: <code>{{ HEAD.join(', ') }}</code></p>
+          <p class="muted op-cols">คอลัมน์: <code>{{ HEAD.join(', ') }}</code> (batch = ล็อตผู้ผลิต)</p>
           <div class="op-actions">
             <p-fileupload mode="basic" accept=".csv,text/csv" :auto="false" customUpload chooseLabel="เลือกไฟล์ .csv" chooseIcon="pi pi-upload" @select="onSelect" />
             <button type="button" class="doc-link op-sample" @click="sample"><i class="pi pi-download" aria-hidden="true"></i> ดาวน์โหลดไฟล์ตัวอย่าง</button>

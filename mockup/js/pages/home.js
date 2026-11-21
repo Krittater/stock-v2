@@ -1,7 +1,7 @@
 // หน้าแรก: KPI · ทางลัด · ความเคลื่อนไหวล่าสุด (docs ทุกชนิด) + dialog รายละเอียดบรรทัด
 (function () {
-  const { ref, computed } = Vue;
-  const { state, user, go, act } = AppState;
+  const { ref, computed, watch } = Vue;
+  const { state, user, go, act, route } = AppState;
 
   const TYPE = { issue: ['เบิก', 'warn'], receive: ['รับ', 'info'], adjust: ['ปรับยอด', 'secondary'] };
   // [ข้อความ, tone] — ข้อความเสมอ ไม่พึ่งสีอย่างเดียว
@@ -45,6 +45,10 @@
       })));
       const first = ref(0);
       const sel = ref(null);
+      // #/?doc=REQ-… เปิดกล่องรายละเอียดเอกสาร (ลิงก์จากหน้าประวัติ)
+      const openDoc = (id) => { if (id) sel.value = state.docs.find((d) => d.id === id) || null; };
+      openDoc(route.query.doc);
+      watch(() => route.query.doc, openDoc);
       const selLines = computed(() => sel.value && sel.value.lines.map((l) => ({ l, p: byId.value.get(l.productId) })));
       const canPick = (d) => d.type === 'issue' && d.lines.some((l) => l.reserved > 0) && (user.value.role !== 'engineer' || d.by === user.value.id);
       const pick = (d) => act((s, u) => Domain.pickReserved(s, d.id, u), (r) => `จ่ายของที่กันไว้ให้ ${r.id} แล้ว`);

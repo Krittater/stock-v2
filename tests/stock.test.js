@@ -114,7 +114,7 @@ test('closeCount สินค้า 2 ชั้นนับขาด ไม่�
 });
 test('parseSaved ปฏิเสธ version 2', () => {
   assert.equal(D.parseSaved(JSON.stringify({ version: 2 })), null);
-  assert.equal(D.parseSaved(JSON.stringify({ version: 3 })).version, 3);
+  assert.equal(D.parseSaved(JSON.stringify({ version: 3 })), null); // ไม่ครบ shape → ไม่ใช้
 });
 test('similarity สายไฟ THW 2.5 กับ สายไฟ THW 2.5 sq.mm สีดำ ≥ 0.35', () => {
   assert.ok(D.similarity('สายไฟ THW 2.5', 'สายไฟ THW 2.5 sq.mm สีดำ') >= 0.35);

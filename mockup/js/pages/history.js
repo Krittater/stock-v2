@@ -21,13 +21,13 @@
   // ลิงก์ไปหน้าที่มีเลขอ้างอิงนั้น (ไม่มีหน้า = ไม่ทำลิงก์)
   function linkOf(a) {
     const r = a.ref || '';
-    if (a.action === 'count.queue' || a.action.startsWith('opening.') && a.action !== 'opening.import' && a.action !== 'opening.lock') return ['approvals', { tab: 'cc' }];
+    if (a.action === 'count.queue' || (a.action.startsWith('opening.') && a.action !== 'opening.import' && a.action !== 'opening.lock')) return ['approvals', { tab: 'cc' }];
     if (a.action.startsWith('count.')) return ['count', { id: r }];
     if (a.action === 'opening.import' || a.action === 'opening.lock') return ['opening'];
     if (/^J-/.test(r)) return ['jobs', { id: r }];
     if (/^RT-/.test(r)) return ['returns'];
     if (/^(RC|PR)-/.test(r)) return ['receive'];
-    if (/^REQ-/.test(r)) return ['home'];
+    if (/^(REQ|RC|ADJ)-/.test(r)) return ['home', { doc: r }];
     return null;
   }
   const dayOf = (at) => { const d = new Date(at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
