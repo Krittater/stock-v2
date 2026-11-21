@@ -138,6 +138,20 @@
   }
   const unread = (state, userId) => (state.notifs || []).filter((n) => n.to === userId && !n.read).length;
 
+  // ค้างรับของ PR ที่เปิดอยู่ของใบเบิกนี้ ต้องไม่เกินส่วนขาดที่ยังไม่ได้กัน/ไม่ถูกครอบคลุม: ส่วนเกินตัดออกจาก PR ใหม่สุดก่อน (ไม่ตัดส่วนที่รับแล้ว)
+  function trimPRs(state, d, l) {
+    const open = state.prs.filter((r) => r.reqId === d.id && r.productId === l.productId && r.status === 'open');
+    let excess = r2(open.reduce((a, r) => a + r.qty - r.received, 0) - Math.max(0, l.waiting - l.reserved - (l.covered || 0)));
+    for (const r of open.reverse()) {
+      if (excess <= 0) break;
+      const cut = Math.min(excess, r2(r.qty - r.received));
+      if (cut <= 0) continue;
+      r.qty = r2(r.qty - cut); excess = r2(excess - cut);
+      if (r.qty <= r.received + 1e-9) r.status = r.received > 0 ? 'done' : 'cancelled';
+      log(state, 'system', 'pr.trim', r.id, `ลดรายการต้องซื้อ ${r.id} ลง ${cut} เพราะ ${d.id} ได้ของจากที่อื่นแล้ว${r.status === 'open' ? '' : r.status === 'done' ? ' (ปิด)' : ' (ยกเลิก)'}`);
+    }
+  }
+
   // ของเข้าคลัง → กันให้ใบเบิกที่รอ (ใบเก่าสุดก่อน) เท่าที่เบิกได้จริง; ครบทุกบรรทัด = ready + แจ้งผู้เบิก
   function reserveForWaiting(state, productId, whId) {
     const docs = state.docs
@@ -151,6 +165,8 @@
         const add = Math.min(free, r2(l.waiting - l.reserved));
         if (add <= 0) continue;
         l.reserved = r2(l.reserved + add); free = r2(free - add);
+        if (l.reserved >= l.waiting - 1e-9) l.covered = 0; // กันครบแล้ว ไม่ต้องถือยอดรอยืนยันไว้อีก
+        trimPRs(state, d, l);
         if (!touched.includes(d)) touched.push(d);
       }
       if (touched.includes(d) && d.lines.every((l) => l.reserved >= l.waiting - 1e-9)) {

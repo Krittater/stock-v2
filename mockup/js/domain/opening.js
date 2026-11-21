@@ -62,14 +62,14 @@
     return dropped;
   }
   // บรรทัดที่เสียความครอบคลุมแล้วยังไม่ได้ของกันไว้และไม่มี PR เปิดอยู่ → เปิด PR ส่วนที่ขาด แจ้งผู้เบิก
-  function ensurePRs(state, dropped) {
+  function ensurePRs(state, dropped, why) {
     for (const [d, l] of dropped) {
       const have = state.prs.filter((r) => r.reqId === d.id && r.productId === l.productId && r.status === 'open').reduce((a, r) => a + r.qty - r.received, 0);
       const need = r2(l.waiting - l.reserved - (l.covered || 0) - have);
       if (need <= 0) continue;
       const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: d.whId, qty: need, received: 0, status: 'open', reqId: d.id };
       state.prs.push(pr); d.prIds.push(pr.id);
-      notify(state, [d.by], 'warn', `ยอดตั้งต้นของ ${productOf(state, l.productId).name} ไม่ครอบคลุม ${d.id} จึงเปิดรายการต้องซื้อ ${pr.id}`, '#/');
+      notify(state, [d.by], 'warn', why ? why(d, pr) : `ยอดตั้งต้นของ ${productOf(state, l.productId).name} ไม่ครอบคลุม ${d.id} จึงเปิดรายการต้องซื้อ ${pr.id}`, '#/');
     }
   }
   // postIssue ใช้: ส่วนขาดที่ยอดรอยังไม่ถูกใบอื่นนับครอบคลุม
@@ -251,6 +251,6 @@
     return state.settings.openingLocked;
   }
 
-  Object.assign(D, { submitOpening, confirmOpening, approvalItems, pendingOpening, coverable, queueCountDiff, parseOpeningCsv, importOpening, setOpeningLock });
+  Object.assign(D, { ensurePRs, submitOpening, confirmOpening, approvalItems, pendingOpening, coverable, queueCountDiff, parseOpeningCsv, importOpening, setOpeningLock });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

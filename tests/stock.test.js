@@ -166,7 +166,7 @@ test('receive ชั้นไม่มี/ม้วนไม่ตรงจำ�
   const rc = (lines) => () => D.receive(s, { whId: 'W-BN', lines }, store(s));
   assert.throws(rc([{ productId: 'P-0003', qty: 2 }, { productId: 'P-0003', qty: 1, shelf: 'Z-99' }]), { code: 'shelf_missing' });
   assert.throws(rc([{ productId: 'P-0003', qty: 1, shelf: 'Z-1' }]), { code: 'shelf_inactive' });
-  assert.throws(rc([{ productId: 'P-0002', qty: 100, rollLengths: [60, 30] }]), { code: 'roll_sum' });
+  assert.throws(rc([{ productId: 'P-0002', rollLengths: [60, -30] }]), { code: 'qty_invalid' }); // จำนวนของบรรทัดม้วน = ผลรวมความยาว (ไม่มี roll_sum แล้ว)
   assert.equal(JSON.stringify(s), snap);
   const d = D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 90, rollLengths: [60, 30], shelf: 'A-01' }] }, store(s));
   assert.equal(d.status, 'posted'); assert.equal(D.qtyAt(s, 'P-0002', 'W-BN', 'A-01'), 90);

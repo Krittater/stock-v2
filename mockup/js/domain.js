@@ -308,63 +308,6 @@
   }
   const openPRs = (state, whId) => state.prs.filter((r) => r.status === 'open' && (!whId || r.whId === whId));
 
-  function applyPR(state, pr, qty) {
-    pr.received += qty;
-    if (pr.received >= pr.qty) pr.status = 'done';
-  }
-
-  // ตรวจบรรทัดรับผ่าน stockIn (ชั้นมี/เปิดอยู่ ม้วนถูกต้อง) และความยาวม้วนรวมต้องเท่าจำนวนที่รับ
-  function checkReceiveLine(state, whId, l) {
-    const ins = Domain.stockIn(state, { productId: l.productId, whId, shelf: l.shelf, qty: l.qty, rollLengths: l.rollLengths, batch: l.batch });
-    if (Math.abs(ins.amount - l.qty) > 0.005) throw new DomainError('roll_sum', 'ความยาวม้วนรวมไม่เท่ากับจำนวนที่รับ');
-    return ins;
-  }
-
-  function postReceipt(state, doc, actor) {
-    const ins = doc.lines.map((l) => checkReceiveLine(state, doc.whId, l)); // ตรวจครบก่อนลงยอด
-    for (const [i, l] of doc.lines.entries()) {
-      ins[i].apply();
-      const pr = l.prId && state.prs.find((r) => r.id === l.prId);
-      if (pr) applyPR(state, pr, l.qty);
-    }
-    for (const id of new Set(doc.lines.map((l) => l.productId))) Domain.reserveForWaiting(state, id, doc.whId);
-    Domain.log(state, actor, 'receive', doc.id, 'รับของเข้าคลัง ' + doc.whId);
-  }
-
-  function receive(state, input, actor) {
-    const { whId, lines, note } = input;
-    if (!lines || !lines.length) throw new DomainError('lines_empty', 'เพิ่มของอย่างน้อย 1 รายการ');
-    assertWarehouseOpen(state, whId);
-    for (const l of lines) {
-      const p = state.products.find((x) => x.id === l.productId);
-      if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
-      validateQty(l.qty, p.unit);
-      checkReceiveLine(state, whId, l);
-      if (l.prId) {
-        const pr = state.prs.find((r) => r.id === l.prId);
-        if (!pr || pr.productId !== l.productId || pr.whId !== whId)
-          throw new DomainError('pr_mismatch', 'รายการต้องซื้อไม่ตรงกับสินค้าหรือคลัง');
-      }
-    }
-    const doc = {
-      id: nextId(state, 'RC'), type: 'receive', status: actor.role === 'engineer' ? 'pending' : 'posted', whId,
-      lines: lines.map((l) => ({ ...l })), note: note ?? '', by: actor.id, at: new Date().toISOString(),
-    };
-    if (doc.status === 'posted') postReceipt(state, doc, actor);
-    state.docs.push(doc);
-    return doc;
-  }
-
-  function confirmReceipt(state, docId, actor, accept) {
-    if (actor.role === 'engineer') throw new DomainError('forbidden', 'บัญชีนี้ยืนยันยอดไม่ได้ ให้ Store หรือหัวหน้ายืนยัน');
-    const doc = state.docs.find((d) => d.id === docId);
-    if (!doc || doc.type !== 'receive' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
-    if (accept) { assertWarehouseOpen(state, doc.whId); postReceipt(state, doc, actor); }
-    doc.status = accept ? 'posted' : 'rejected';
-    if (!accept) Domain.log(state, actor, 'receive.reject', doc.id, 'ไม่รับใบรับ');
-    return doc;
-  }
-
   const needsApproval = (state, actor) => !!state.settings.requireApproval && actor.role !== 'head';
 
   // ตัดยอดตามที่มีจริง ส่วนขาดเปิด PR; ตรวจครบแล้วก่อนเรียก จึงไม่ throw กลางทาง
@@ -520,7 +463,7 @@
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, catOf, norm, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
     addCategory, updateCategory, deleteCategory, productCounts, findSimilar,
-    receive, confirmReceipt, openPRs, needsApproval, issue, approveIssue,
+    openPRs, needsApproval, issue, approveIssue,
     startCount, setCounted, countSummary, closeCount, cancelCount,
   };
   root.Domain = Domain;
