@@ -177,3 +177,18 @@ test('nextJobId ตรงกับรหัสที่ addJob ให้ · jobU
   assert.ok(csv.includes('ชื่องาน,"งาน ""A"", ใหม่"\r\n'));
   assert.ok(csv.includes('P-0001,น็อต,ตัว,10,3,7\r\n'));
 });
+
+test('jobHistory รวมประวัติงาน+ใบเบิก+PR ใหม่สุดก่อน · CSV กัน formula และ newline', () => {
+  const s = mini();
+  const d = D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0001', qty: 500 }] }, eng).doc;
+  D.closeIssue(s, d.id, head);
+  D.closeJob(s, 'J-25-010', head);
+  const h = D.jobHistory(s, 'J-25-010');
+  const acts = h.map((x) => x.action);
+  assert.ok(acts.includes('issue.close') && acts.includes('job.close'));
+  assert.equal(acts[0], 'job.close');
+  assert.ok(h.every((x, i) => !i || h[i - 1].at >= x.at));
+  s.products[0].name = '=น็อต\nสอง';
+  const csv = D.jobUsageCsv(s, 'J-25-010');
+  assert.ok(csv.includes(',"\'=น็อต\nสอง",ตัว,'));
+});

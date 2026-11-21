@@ -13,7 +13,6 @@
   const userName = (id) => state.users.find((u) => u.id === id)?.name || (id ? id : '-');
   const canClose = (d) => d.status === 'posted' && OPEN_FILL.includes(d.fill);
   const canCancel = (d) => d.status === 'pending' || (canClose(d) && !d.lines.some((l) => (l.issued || 0) > 0));
-  const openPRCount = (docId) => state.prs.filter((r) => r.status === 'open' && r.reqId === docId && !(r.received > 0)).length;
 
   // ---------- แผงรายละเอียดงาน (ใช้ทั้งแผงขวาและ drawer) ----------
   const JobPanel = {
@@ -22,8 +21,13 @@
     setup(props) {
       const usage = computed(() => Domain.jobUsage(state, props.job.id));
       const docs = computed(() => state.docs.filter((d) => d.type === 'issue' && d.jobId === props.job.id).sort((a, b) => b.at.localeCompare(a.at)));
-      const history = computed(() => Domain.auditFor(state, props.job.id).slice().reverse());
-      return { usage, docs, history, prName, unitOf, fmt, dateTh, when, userName, canClose, canCancel, docStatus: (d) => UI.docStatus(d), user };
+      const history = computed(() => Domain.jobHistory(state, props.job.id));
+      // ปิด/ยกเลิกโดยใคร เมื่อไร (จาก audit ของใบเบิก)
+      const byWho = (d) => {
+        const a = Domain.auditFor(state, d.id).filter((x) => x.action === 'issue.close' || x.action === 'issue.cancel').pop();
+        return a ? (a.action === 'issue.close' ? 'ปิดโดย ' : 'ยกเลิกโดย ') + userName(a.by) + ' · ' + when(a.at) : '';
+      };
+      return { byWho, usage, docs, history, prName, unitOf, fmt, dateTh, when, userName, canClose, canCancel, docStatus: (d) => UI.docStatus(d), user };
     },
     template: `<div class="jb-detail">
       <div class="jb-head">
@@ -69,6 +73,7 @@
             <doc-id :id="d.id" /> <span class="muted">{{ when(d.at) }}</span>
             <span class="status-tag" :class="docStatus(d)[1]"><span class="dot" aria-hidden="true"></span>{{ docStatus(d)[0] }}</span>
           </div>
+          <div v-if="byWho(d)" class="muted jb-meta">{{ byWho(d) }}</div>
           <div v-if="canClose(d) || canCancel(d)" class="jb-doc-acts">
             <p-button v-if="canClose(d)" label="ปิดใบเบิก" size="small" severity="secondary" outlined @click="$emit('req', d, 'close')" />
             <p-button v-if="canCancel(d)" label="ยกเลิก" size="small" severity="danger" outlined @click="$emit('req', d, 'cancel')" />
@@ -172,7 +177,7 @@
       // ---------- ปิด/ยกเลิกใบเบิก ----------
       const rq = reactive({ open: false, doc: null, kind: 'close', cancel: true });
       const openReq = (doc, kind) => Object.assign(rq, { open: true, doc, kind, cancel: true });
-      const rqPRs = computed(() => (rq.doc ? openPRCount(rq.doc.id) : 0));
+      const rqPRs = computed(() => (rq.doc ? Domain.openPRsOf(state, [rq.doc]).length : 0));
       const confirmReq = () => {
         const fn = rq.kind === 'close' ? Domain.closeIssue : Domain.cancelIssue;
         const r = act((s, u) => fn(s, rq.doc.id, u, { cancelPRs: rq.cancel }));
@@ -221,16 +226,18 @@
             :rowClass="(r) => r.j.id === selId ? 'jb-sel' : ''" @row-click="select($event.data.j.id)">
             <p-column header="รหัส"><template #body="{ data }"><doc-id :id="data.j.id" /></template></p-column>
             <p-column header="ชื่องาน" bodyClass="c-name">
-              <template #body="{ data }"><button type="button" class="doc-link jb-name" :aria-label="'ดูงาน ' + data.j.id + ' ' + data.j.name" @click.stop="select(data.j.id)">{{ data.j.name }}</button></template>
+              <template #body="{ data }"><button type="button" class="doc-link jb-name" :aria-label="'ดูงาน ' + data.j.id + ' ' + data.j.name" @click.stop="select(data.j.id)">{{ data.j.name }}</button>
+                <span class="jb-mline"><span class="status-tag" :class="data.j.open ? 'tone-green' : 'tone-gray'"><span class="dot" aria-hidden="true"></span>{{ data.j.open ? 'เปิดอยู่' : 'ปิดแล้ว' }}</span>
+                  <span v-if="data.stuck" class="jb-stuck">ใบเบิก {{ data.n }} ({{ data.stuck }} ค้าง)</span></span></template>
             </p-column>
             <p-column header="ลูกค้า"><template #body="{ data }">{{ data.j.customer || '-' }}</template></p-column>
             <p-column header="ไซต์"><template #body="{ data }">{{ data.j.site || '-' }}</template></p-column>
             <p-column header="ผู้รับผิดชอบ"><template #body="{ data }">{{ userName(data.j.ownerId) }}</template></p-column>
-            <p-column header="ใบเบิก">
+            <p-column header="ใบเบิก" headerClass="jb-dcol" bodyClass="jb-dcol">
               <template #body="{ data }"><span class="num">{{ data.n }}</span><template v-if="data.stuck"> <span class="jb-stuck">({{ data.stuck }} ค้าง)</span></template></template>
             </p-column>
             <p-column header="กำหนดเสร็จ"><template #body="{ data }">{{ dateTh(data.j.due) }}</template></p-column>
-            <p-column header="สถานะ">
+            <p-column header="สถานะ" headerClass="jb-dcol" bodyClass="jb-dcol">
               <template #body="{ data }"><span class="status-tag" :class="data.j.open ? 'tone-green' : 'tone-gray'"><span class="dot" aria-hidden="true"></span>{{ data.j.open ? 'เปิดอยู่' : 'ปิดแล้ว' }}</span></template>
             </p-column>
             <template #empty><div class="table-empty"><p>ไม่มีงาน</p></div></template>
@@ -312,7 +319,7 @@
         <template v-if="rq.doc">
           <p class="jb-close-t"><doc-id :id="rq.doc.id" /></p>
           <p class="muted jb-empty">{{ rq.kind === 'close' ? 'ปิดแล้วจะปล่อยของที่กันไว้คืน และไม่รอของเข้าอีก' : 'ยกเลิกใบเบิกที่ยังไม่ได้จ่ายของ' }}</p>
-          <label class="rt-check" for="rq-pr">
+          <label v-if="rqPRs" class="rt-check" for="rq-pr">
             <p-checkbox v-model="rq.cancel" inputId="rq-pr" binary />
             <span>ยกเลิกรายการต้องซื้อที่ยังไม่ได้รับของ ({{ rqPRs }} รายการ)</span>
           </label>

@@ -787,3 +787,9 @@ body {
 .jb-drawer .p-drawer-content { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 @media (max-width: 1279.98px) { .jb-layout { grid-template-columns: minmax(0, 1fr); } }
 .jb-table .doc-id { white-space: nowrap; }
+.jb-mline { display: none; }
+@media (max-width: 767.98px) {
+  .jb-table .jb-dcol { display: none; }
+  .jb-table .p-datatable-table { min-width: 640px; }
+  .jb-mline { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 4px; }
+}

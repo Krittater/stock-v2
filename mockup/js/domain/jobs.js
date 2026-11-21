@@ -149,10 +149,18 @@
     return { doc, cancelledPRs: prs };
   }
 
+  // ประวัติของงาน + ใบเบิก + รายการต้องซื้อของใบเหล่านั้น ใหม่สุดก่อน
+  function jobHistory(state, jobId) {
+    const docIds = new Set(jobDocs(state, jobId).map((d) => d.id));
+    const refs = new Set([jobId, ...docIds, ...state.prs.filter((r) => docIds.has(r.reqId)).map((r) => r.id)]);
+    return (state.audit || []).map((a, i) => ({ a, i })).filter((x) => refs.has(x.a.ref))
+      .sort((x, y) => (y.a.at > x.a.at ? 1 : y.a.at < x.a.at ? -1 : y.i - x.i)).map((x) => x.a);
+  }
+
   // CSV ยอดใช้ของงาน: BOM + CRLF ให้ Excel อ่านไทยถูก
   function jobUsageCsv(state, jobId) {
     const job = jobOf(state, jobId);
-    const q = (v) => { const t = String(v ?? ''); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const q = (v) => { let t = String(v ?? ''); if (typeof v === 'string' && /^[=+-@]/.test(t)) t = "'" + t; return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
     const rows = [['รหัสงาน', job.id], ['ชื่องาน', job.name], [], ['รหัสสินค้า', 'สินค้า', 'หน่วย', 'เบิก', 'คืน', 'ใช้จริง']];
     for (const u of D.jobUsage(state, jobId)) {
       const p = state.products.find((x) => x.id === u.productId) || {};
@@ -161,6 +169,6 @@
     return '﻿' + rows.map((r) => r.map(q).join(',')).join('\r\n') + '\r\n';
   }
 
-  Object.assign(D, { today, nextJobId, jobUsageCsv, similarJobs, addJob, updateJob, openDocsOf, closeJobCheck, closeJob, reopenJob, cloneJob, closeIssue, cancelIssue });
+  Object.assign(D, { today, nextJobId, jobHistory, openPRsOf, jobUsageCsv, similarJobs, addJob, updateJob, openDocsOf, closeJobCheck, closeJob, reopenJob, cloneJob, closeIssue, cancelIssue });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);
