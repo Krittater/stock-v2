@@ -58,7 +58,7 @@
       const use = (p) => { emit('created', p, { existing: true, receipt: null }); close(); };
       const startNewCat = () => { catSelect.value?.hide(); newCat.value = ''; };
       const saveNewCat = () => {
-        const cat = act((s) => Domain.addCategory(s, { name: newCat.value }), (c) => `สร้างหมวด "${c.name}" แล้ว`);
+        const cat = act((s, u) => Domain.addCategory(s, { name: newCat.value }, u), (c) => `สร้างหมวด "${c.name}" แล้ว`);
         if (cat) { f.categoryId = cat.id; newCat.value = null; }
       };
       const save = () => {

@@ -91,8 +91,8 @@
       const saveCat = () => {
         const patch = { name: cd.name, image: cd.image, icon: cd.icon, color: cd.color };
         const c = cd.id
-          ? act((s) => Domain.updateCategory(s, cd.id, patch), (x) => `บันทึกหมวด "${x.name}" แล้ว`)
-          : act((s) => Domain.addCategory(s, { ...patch, parentId: cd.parentId }), (x) => `สร้างหมวด "${x.name}" แล้ว`);
+          ? act((s, u) => Domain.updateCategory(s, cd.id, patch, u), (x) => `บันทึกหมวด "${x.name}" แล้ว`)
+          : act((s, u) => Domain.addCategory(s, { ...patch, parentId: cd.parentId }, u), (x) => `สร้างหมวด "${x.name}" แล้ว`);
         if (c) { cd.open = false; if (c.parentId) open[c.parentId] = true; }
       };
 
@@ -111,7 +111,7 @@
           services.confirm.require({
             header: 'ลบหมวดหมู่', message: `ลบหมวด "${cat.name}" หรือไม่?`, icon: 'pi pi-trash',
             rejectProps: { label: 'ยกเลิก', severity: 'secondary', outlined: true }, acceptProps: { label: 'ลบ', severity: 'danger' },
-            accept: () => act((s) => Domain.deleteCategory(s, cat.id), `ลบหมวด "${cat.name}" แล้ว`),
+            accept: () => act((s, u) => Domain.deleteCategory(s, cat.id, {}, u), `ลบหมวด "${cat.name}" แล้ว`),
           });
           return;
         }
@@ -119,7 +119,7 @@
       };
       const moveDelete = () => {
         const name = del.cat.name;
-        const r = act((s) => Domain.deleteCategory(s, del.cat.id, { moveTo: del.to }), (x) => `ย้ายสินค้า ${x.movedProducts} รายการ แล้วลบหมวด "${name}"`);
+        const r = act((s, u) => Domain.deleteCategory(s, del.cat.id, { moveTo: del.to }, u), (x) => `ย้ายสินค้า ${x.movedProducts} รายการ แล้วลบหมวด "${name}"`);
         if (r) del.open = false;
       };
 

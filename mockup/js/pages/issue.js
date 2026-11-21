@@ -148,7 +148,7 @@
       const openJob = () => { jobSelect.value?.hide(); Object.assign(jobForm, { name: '', customer: '' }); jobOpen.value = true; };
       const useJob = (j) => { cart.value.jobId = j.id; jobOpen.value = false; };
       const saveJob = () => {
-        const j = act((s) => Domain.addJob(s, { ...jobForm }), (x) => `สร้างงาน ${x.id} ${x.name} แล้ว`);
+        const j = act((s, u) => Domain.addJob(s, { ...jobForm }, u), (x) => `สร้างงาน ${x.id} ${x.name} แล้ว`);
         if (j) useJob(j);
       };
 

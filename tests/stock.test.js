@@ -136,3 +136,59 @@ test('postIssue เก็บ cuts / shelves ในบรรทัด', () => {
   assert.deepEqual(doc.lines[1].shelves, [{ shelf: 'ทั่วไป', qty: 2 }]);
   assert.equal(s.audit.length, 1);
 });
+
+test('ของบนชั้นรอตรวจ (ชั้นธรรมดา + ม้วน) ไม่นับใน kpis และ warehouseOptions', () => {
+  const s = mini();
+  s.stock['P-0003|W-BN|QC'] = 50; roll(s, 'R-1', 500, { shelf: 'QC' });
+  assert.equal(D.kpis(s, 'W-BN').out, 2); // P-0002, P-0003 ยังนับว่าไม่มีของ
+  const opts = D.warehouseOptions(s, [{ productId: 'P-0003', qty: 5 }, { productId: 'P-0002', qty: 5 }]);
+  assert.equal(opts.find((o) => o.wh.id === 'W-BN').short, 'none');
+});
+test('closeCount นับขาดข้ามหลายม้วน ตัดครบ ไม่ติดลบ ยอดรวม = ที่นับ', () => {
+  const s = mini(); roll(s, 'R-1', 100); roll(s, 'R-2', 40); roll(s, 'R-3', 30);
+  const c = D.startCount(s, { whId: 'W-BN' }, store(s));
+  D.setCounted(s, c.id, 'P-0002', 20); D.closeCount(s, c.id, store(s));
+  assert.equal(D.qtyOf(s, 'P-0002', 'W-BN'), 20);
+  assert.ok(s.rolls.every((r) => r.length > 0));
+});
+test('closeCount ล้มกลางทางต้องไม่ลงยอดและไม่สร้างใบปรับ', () => {
+  const s = mini(); s.stock['P-0003|W-BN|ทั่วไป'] = 5; s.stock['P-0001|W-BN|ทั่วไป'] = 10;
+  const c = D.startCount(s, { whId: 'W-BN' }, store(s));
+  D.setCounted(s, c.id, 'P-0001', 8); D.setCounted(s, c.id, 'P-0003', 2);
+  s.stock['P-0003|W-BN|ทั่วไป'] = 1; // ยอดเปลี่ยนใต้เท้า: ตัด 3 ไม่พอ
+  const docs = s.docs.length;
+  assert.throws(() => D.closeCount(s, c.id, store(s)), { code: 'stock_short' });
+  assert.equal(s.stock['P-0001|W-BN|ทั่วไป'], 10); assert.equal(s.docs.length, docs); assert.equal(c.status, 'open');
+});
+test('receive ชั้นไม่มี/ม้วนไม่ตรงจำนวน ต้องไม่เปลี่ยนอะไรเลย', () => {
+  const s = mini(); s.warehouses[0].shelves.push({ code: 'Z-1', active: false });
+  const snap = JSON.stringify(s);
+  const rc = (lines) => () => D.receive(s, { whId: 'W-BN', lines }, store(s));
+  assert.throws(rc([{ productId: 'P-0003', qty: 2 }, { productId: 'P-0003', qty: 1, shelf: 'Z-99' }]), { code: 'shelf_missing' });
+  assert.throws(rc([{ productId: 'P-0003', qty: 1, shelf: 'Z-1' }]), { code: 'shelf_inactive' });
+  assert.throws(rc([{ productId: 'P-0002', qty: 100, rollLengths: [60, 30] }]), { code: 'roll_sum' });
+  assert.equal(JSON.stringify(s), snap);
+  const d = D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 90, rollLengths: [60, 30], shelf: 'A-01' }] }, store(s));
+  assert.equal(d.status, 'posted'); assert.equal(D.qtyAt(s, 'P-0002', 'W-BN', 'A-01'), 90);
+});
+test('confirmReceipt ตรวจซ้ำก่อนลงยอด (ชั้นถูกปิดระหว่างรอ) และไม่ลงครึ่งๆ', () => {
+  const s = mini();
+  const eng = { id: 'U-3', role: 'engineer' };
+  const d = D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0003', qty: 2 }, { productId: 'P-0003', qty: 1, shelf: 'A-01' }] }, eng);
+  s.warehouses[0].shelves[1].active = false;
+  assert.throws(() => D.confirmReceipt(s, d.id, store(s), true), { code: 'shelf_inactive' });
+  assert.equal(D.qtyOf(s, 'P-0003', 'W-BN'), 0); assert.equal(d.status, 'pending');
+});
+test('ทุกการเปลี่ยนข้อมูลลง audit', () => {
+  const s = mini(); const h = s.users[0];
+  s.jobs.push({ id: 'J-1', name: 'งาน', open: true });
+  const c = D.startCount(s, { whId: 'W-A' }, h); D.cancelCount(s, c.id, h);
+  const cat = D.addCategory(s, { name: 'หมวดใหม่' }, h); D.updateCategory(s, cat.id, { name: 'หมวดใหม่ 2' }, h); D.deleteCategory(s, cat.id, {}, h);
+  D.addJob(s, { name: 'งานใหม่ของฉัน' }, h);
+  const d = D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0003', qty: 1 }] }, { id: 'U-3', role: 'engineer' });
+  D.confirmReceipt(s, d.id, h, false);
+  s.settings.requireApproval = true;
+  const r = D.issue(s, { whId: 'W-BN', jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 1 }] }, { id: 'U-3', role: 'engineer' });
+  D.approveIssue(s, r.doc.id, h, false);
+  assert.deepEqual(s.audit.map((a) => a.action), ['count.start', 'count.cancel', 'category.add', 'category.update', 'category.delete', 'job.add', 'receive.reject', 'issue.reject']);
+});

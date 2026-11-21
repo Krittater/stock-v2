@@ -210,7 +210,7 @@
     return n;
   }
 
-  function addCategory(state, { name, parentId = null, icon, color, image } = {}) {
+  function addCategory(state, { name, parentId = null, icon, color, image } = {}, actor) {
     if (parentId) {
       const p = catOf(state, parentId);
       if (!p || p.parentId) throw new DomainError('cat_depth', 'หมวดย่อยซ้อนได้ชั้นเดียว');
@@ -219,14 +219,16 @@
     const order = Math.max(0, ...state.categories.filter((c) => (c.parentId || null) === (parentId || null)).map((c) => c.order || 0)) + 1;
     const cat = { id: nextId(state, 'C'), name: n, parentId: parentId || null, icon: icon || 'pi-tag', color: color || '#82d2b3', order, image: image ?? null };
     state.categories.push(cat);
+    Domain.log(state, actor, 'category.add', cat.id, 'สร้างหมวด ' + cat.name);
     return cat;
   }
 
-  function updateCategory(state, id, patch) {
+  function updateCategory(state, id, patch, actor) {
     const c = catOf(state, id);
     if (!c) throw new DomainError('cat_missing', 'ไม่พบหมวดนี้');
     if ('name' in patch) c.name = checkCatName(state, patch.name, c.parentId, c.id);
     for (const k of ['icon', 'color', 'order', 'image']) if (k in patch) c[k] = patch[k];
+    if (Object.keys(patch).some((k) => k !== 'order')) Domain.log(state, actor, 'category.update', id, 'แก้ไขหมวด ' + c.name); // สลับลำดับอย่างเดียวไม่บันทึก
     return c;
   }
 
@@ -239,13 +241,13 @@
     return m;
   }
 
-  function deleteCategory(state, id, opts = {}) {
+  function deleteCategory(state, id, opts = {}, actor) {
     const c = catOf(state, id);
     if (!c) throw new DomainError('cat_missing', 'ไม่พบหมวดนี้');
     const subs = state.categories.filter((x) => x.parentId === id);
     const prods = state.products.filter((p) => p.categoryId === id);
     const n = (productCounts(state).get(id) || 0), m = subs.length;
-    if (!n && !m) { state.categories.splice(state.categories.indexOf(c), 1); return { movedProducts: 0 }; }
+    if (!n && !m) { state.categories.splice(state.categories.indexOf(c), 1); Domain.log(state, actor, 'category.delete', id, 'ลบหมวด ' + c.name); return { movedProducts: 0 }; }
     const to = opts.moveTo && catOf(state, opts.moveTo);
     if (!opts.moveTo) throw new DomainError('cat_in_use', `หมวดนี้มีสินค้า ${n} รายการ และหมวดย่อย ${m} หมวด เลือกหมวดที่จะย้ายไปก่อน`);
     if (!to || descendantIds(state, id).has(to.id)) throw new DomainError('cat_move_invalid', 'เลือกหมวดปลายทางอื่น');
@@ -253,6 +255,7 @@
     prods.forEach((p) => { p.categoryId = to.id; });
     subs.forEach((s) => { s.parentId = to.parentId || to.id; });
     state.categories.splice(state.categories.indexOf(c), 1);
+    Domain.log(state, actor, 'category.delete', id, 'ลบหมวด ' + c.name + ' ย้ายสินค้า ' + prods.length + ' รายการ');
     return { movedProducts: prods.length };
   }
 
@@ -276,7 +279,7 @@
   const findSimilar = (state, name) => similarByName(state.products, name, 0.35);
   const similarJobs = (state, name) => similarByName(state.jobs.filter((j) => j.open), name, 0.45);
 
-  function addJob(state, { name, customer } = {}) {
+  function addJob(state, { name, customer } = {}, actor) {
     const n = String(name ?? '').trim().replace(/\s+/g, ' ');
     if (!n) throw new DomainError('job_name', 'ใส่ชื่องานก่อน');
     const job = {
@@ -284,6 +287,7 @@
       ownerId: null, site: '', start: null, due: null, closedAt: null, note: '',
     };
     state.jobs.push(job);
+    Domain.log(state, actor, 'job.add', job.id, 'สร้างงาน ' + job.name);
     return job;
   }
 
@@ -325,9 +329,17 @@
     if (pr.received >= pr.qty) pr.status = 'done';
   }
 
+  // ตรวจบรรทัดรับผ่าน stockIn (ชั้นมี/เปิดอยู่ ม้วนถูกต้อง) และความยาวม้วนรวมต้องเท่าจำนวนที่รับ
+  function checkReceiveLine(state, whId, l) {
+    const ins = Domain.stockIn(state, { productId: l.productId, whId, shelf: l.shelf, qty: l.qty, rollLengths: l.rollLengths, batch: l.batch });
+    if (Math.abs(ins.amount - l.qty) > 0.005) throw new DomainError('roll_sum', 'ความยาวม้วนรวมไม่เท่ากับจำนวนที่รับ');
+    return ins;
+  }
+
   function postReceipt(state, doc, actor) {
-    for (const l of doc.lines) {
-      Domain.putStock(state, { productId: l.productId, whId: doc.whId, shelf: l.shelf, qty: l.qty, rollLengths: l.rollLengths, batch: l.batch });
+    const ins = doc.lines.map((l) => checkReceiveLine(state, doc.whId, l)); // ตรวจครบก่อนลงยอด
+    for (const [i, l] of doc.lines.entries()) {
+      ins[i].apply();
       const pr = l.prId && state.prs.find((r) => r.id === l.prId);
       if (pr) applyPR(state, pr, l.qty);
     }
@@ -342,6 +354,7 @@
       const p = state.products.find((x) => x.id === l.productId);
       if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
       validateQty(l.qty, p.unit);
+      checkReceiveLine(state, whId, l);
       if (l.prId) {
         const pr = state.prs.find((r) => r.id === l.prId);
         if (!pr || pr.productId !== l.productId || pr.whId !== whId)
@@ -363,6 +376,7 @@
     if (!doc || doc.type !== 'receive' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
     if (accept) { assertWarehouseOpen(state, doc.whId); postReceipt(state, doc, actor); }
     doc.status = accept ? 'posted' : 'rejected';
+    if (!accept) Domain.log(state, actor, 'receive.reject', doc.id, 'ไม่รับใบรับ');
     return doc;
   }
 
@@ -413,7 +427,7 @@
     if (actor.role !== 'head') throw new DomainError('forbidden', 'เฉพาะหัวหน้าอนุมัติได้');
     const doc = state.docs.find((d) => d.id === docId);
     if (!doc || doc.type !== 'issue' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
-    if (!approve) { doc.status = 'rejected'; return { doc, outcome: 'rejected', prs: [] }; }
+    if (!approve) { doc.status = 'rejected'; Domain.log(state, actor, 'issue.reject', doc.id, 'ไม่อนุมัติใบเบิก'); return { doc, outcome: 'rejected', prs: [] }; }
     assertWarehouseOpen(state, doc.whId);
     return postIssue(state, doc, actor);
   }
@@ -446,6 +460,7 @@
     };
     state.counts.push(count);
     wh.countId = count.id;
+    Domain.log(state, actor, 'count.start', count.id, 'เปิดรอบนับ ' + whId);
     return count;
   }
 
@@ -482,13 +497,11 @@
     const count = openCount(state, countId);
     const changed = count.lines.filter((l) => l.counted !== null && diffOf(l) !== 0);
     let adjust = null;
+    // ตรวจส่วนต่างติดลบทุกบรรทัดก่อนแตะยอด จะได้ไม่ค้างครึ่งทาง
+    for (const l of changed) {
+      if (diffOf(l) < 0 && -diffOf(l) > qtyOf(state, l.productId, count.whId) + 1e-9) throw new DomainError('stock_short', 'ยอดในคลังเปลี่ยนไป ปิดรอบนับไม่ได้');
+    }
     if (changed.length) {
-      adjust = {
-        id: nextId(state, 'ADJ'), type: 'adjust', status: 'posted', whId: count.whId,
-        lines: changed.map((l) => ({ productId: l.productId, qty: diffOf(l) })),
-        note: 'ปรับยอดจากรอบนับ ' + count.id, by: actor.id, at: new Date().toISOString(),
-      };
-      state.docs.push(adjust);
       for (const l of changed) {
         const d = diffOf(l);
         if (d > 0) {
@@ -496,6 +509,12 @@
           Domain.putStock(state, { productId: l.productId, whId: count.whId, qty: d, rollLengths: roll ? [d] : undefined, batch: 'จากการนับ' });
         } else Domain.stockOut(state, { productId: l.productId, whId: count.whId, qty: -d });
       }
+      adjust = {
+        id: nextId(state, 'ADJ'), type: 'adjust', status: 'posted', whId: count.whId,
+        lines: changed.map((l) => ({ productId: l.productId, qty: diffOf(l) })),
+        note: 'ปรับยอดจากรอบนับ ' + count.id, by: actor.id, at: new Date().toISOString(),
+      };
+      state.docs.push(adjust);
     }
     Domain.log(state, actor, 'count.close', count.id, 'ปิดรอบนับ ปรับ ' + changed.length + ' รายการ');
     state.warehouses.find((w) => w.id === count.whId).countId = null;
@@ -508,6 +527,7 @@
     const count = openCount(state, countId);
     state.warehouses.find((w) => w.id === count.whId).countId = null;
     count.status = 'cancelled';
+    Domain.log(state, actor, 'count.cancel', count.id, 'ยกเลิกรอบนับ');
     return count;
   }
 
