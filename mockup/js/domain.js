@@ -291,14 +291,6 @@
     for (const g of A) { const i = pool.indexOf(g); if (i >= 0) { hit++; pool.splice(i, 1); } }
     return (2 * hit) / (A.length + B.length);
   }
-  // คืนรายการที่คล้าย (ไม่รวมชื่อเดียวกันเป๊ะ) เรียงจากคล้ายสุด ไม่เกิน 5
-  function similarByName(items, name, min) {
-    const q = norm(name);
-    if (q.length < 3) return [];
-    return items.filter((p) => norm(p.name) !== q && norm(p.name).length >= 3)
-      .map((p) => [p, similarity(p.name, name)]).filter((x) => x[1] >= min)
-      .sort((a, b) => b[1] - a[1]).slice(0, 5).map((x) => x[0]);
-  }
   // สินค้าที่ชื่อคล้าย (ไม่รวมที่เลิกใช้): ชื่อเดียวกัน (exact) ก่อน แล้วเรียงตามความคล้ายมากไปน้อย ≥ 35% ไม่เกิน 5
   function findSimilar(state, name) {
     const q = norm(name);
@@ -314,20 +306,6 @@
     }
     return out.sort((a, b) => (b.exact - a.exact) || b.pct - a.pct).slice(0, 5);
   }
-  const similarJobs = (state, name) => similarByName(state.jobs.filter((j) => j.open), name, 0.45);
-
-  function addJob(state, { name, customer } = {}, actor) {
-    const n = String(name ?? '').trim().replace(/\s+/g, ' ');
-    if (!n) throw new DomainError('job_name', 'ใส่ชื่องานก่อน');
-    const job = {
-      id: nextId(state, 'J'), name: n, customer: customer || '', open: true,
-      ownerId: null, site: '', start: null, due: null, closedAt: null, note: '',
-    };
-    state.jobs.push(job);
-    Domain.log(state, actor, 'job.add', job.id, 'สร้างงาน ' + job.name);
-    return job;
-  }
-
   const openPRs = (state, whId) => state.prs.filter((r) => r.status === 'open' && (!whId || r.whId === whId));
 
   function applyPR(state, pr, qty) {
@@ -415,7 +393,7 @@
     if (!whId) throw new DomainError('wh_required', 'เลือกคลังที่เบิกของก่อน');
     const job = jobId && state.jobs.find((j) => j.id === jobId);
     if (!job) throw new DomainError('job_required', 'เลือกงาน / โครงการก่อน');
-    if (!job.open) throw new DomainError('job_closed', 'งานนี้ปิดแล้ว เลือกงานอื่น');
+    if (!job.open) throw new DomainError('job_closed', `งาน ${job.id} ปิดไปแล้ว เบิกเพิ่มไม่ได้ (เปิดงานอีกครั้งที่หน้างาน / โครงการ)`);
     assertWarehouseOpen(state, whId);
     for (const l of lines) {
       const p = state.products.find((x) => x.id === l.productId);
@@ -534,7 +512,7 @@
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, catOf, norm, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
     addCategory, updateCategory, deleteCategory, productCounts, findSimilar,
-    receive, confirmReceipt, openPRs, needsApproval, issue, approveIssue, addJob, similarJobs,
+    receive, confirmReceipt, openPRs, needsApproval, issue, approveIssue,
     startCount, setCounted, countSummary, closeCount, cancelCount,
   };
   root.Domain = Domain;

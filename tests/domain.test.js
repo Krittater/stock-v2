@@ -290,10 +290,11 @@ test('guards', () => {
 });
 test('addJob and similarJobs', () => {
   const [s] = base6();
-  assert.equal(D.addJob(s, { name: 'ติดตั้งแอร์ ห้องประชุม' }).id, 'J-26-001');
+  assert.equal(D.addJob(s, { name: 'ติดตั้งแอร์ ห้องประชุม' }).id, `J-${String(new Date().getFullYear()).slice(-2)}-001`);
   assert.throws(() => D.addJob(s, { name: ' ' }), { code: 'job_name' });
-  assert.deepEqual(D.similarJobs(s, 'ซ่อมบำรุง').map((j) => j.id), ['J-25-002']);
-  assert.deepEqual(D.similarJobs(s, 'ปรับปรุงห้องควบคุม โรงงาน C'), []); // closed job excluded
+  assert.throws(() => D.addJob(s, { name: 'ซ่อมบำรุงประจำปี' }), { code: 'job_dup' });
+  assert.deepEqual(D.similarJobs(s, 'ซ่อมบำรุง').map((x) => x.job.id), ['J-25-002']);
+  assert.deepEqual(D.similarJobs(s, 'ปรับปรุงห้องควบคุม โรงงาน D').map((x) => x.job.id), ['J-24-008']); // closed job included
   assert.deepEqual(D.similarJobs(s, 'ซ่อมบำรุงประจำปี'), []); // exact excluded
 });
 test('addJob collapses whitespace only', () => {
