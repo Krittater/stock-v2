@@ -117,7 +117,8 @@
   // W-BN: นอกจาก P-0004/5 (low) และ P-0006 (out) เพิ่ม out 2 + low 10 → low 12 / out 3 พอดี (ทั้งหมด ≤ P-0040)
   const OUT_EXTRA = [10, 23];
   const LOW_EXTRA = [9, 12, 14, 17, 19, 26, 29, 32, 35, 38];
-  const PR_POOL = [4, 5, 6, 9, 10, 12, 14, 17, 19, 23, 26, 29, 32, 35, 38, 7, 8, 11];
+  // P-0006 (ของหมด) ไม่อยู่ในนี้: รายการต้องซื้อของมันเปิดจากใบเบิกที่รอของจริงท้าย build() (ใบเบิกรอของ / RC-AC5)
+  const PR_POOL = [4, 5, 9, 10, 12, 14, 17, 19, 23, 26, 29, 32, 35, 38, 7, 8, 11];
 
   function build(opts) {
     const n = (opts && opts.products) || 2000;
@@ -256,7 +257,7 @@
       return { id, productId: 'P-' + pad(num, 4), whId: 'W-BN', qty: ((k * 7) % 9 + 1) * 10, received: 0, status: 'open', reqId: req.id };
     });
 
-    return {
+    const s = {
       version: 3,
       counters: { P: products.length, REQ: POSTED_ISSUE + PENDING, PR: prs.length, RC: RECEIVE, CC: 0, ADJ: 0, J: 0, C: categories.length, RT: 0, R: rolls.length },
       settings: { requireApproval: false, openingLocked: false },
@@ -264,6 +265,27 @@
       users, warehouses, categories, products, stock, rolls, jobs, docs, prs, counts: [], ccs: [], returns: [], notifs: [], audit: [],
       cart: { lines: [{ productId: 'P-0001', qty: 100 }, { productId: 'P-0002', qty: 10 }, { productId: 'P-0003', qty: 30 }], whId: 'W-BN', jobId: 'J-25-010', note: '' },
     };
+    demo(s);
+    return s;
+  }
+
+  // ข้อมูลเดโม: เรียกฟังก์ชันจริงของ Domain เพื่อให้ shape ถูก แล้วตั้งเวลาให้คงที่ (ห้ามใช้ Date.now)
+  //  (a) ใบเบิกสายม้วนที่ตัดจากม้วนจริง → คืนสายม้วนได้ทันที  (b) ใบเบิกรอของ + รายการต้องซื้อที่เปิดอยู่ → รับของแล้วกันของ+แจ้งผู้เบิก
+  //  (c) ยอดตั้งต้นของวิศวกรรอ Store ยืนยัน
+  function demo(s) {
+    const D = root.Domain || loadDomain();
+    const eng = s.users[0];
+    const at = (h) => iso(1, h);
+    D.issue(s, { whId: 'W-BN', jobId: 'J-25-002', lines: [{ productId: 'P-0007', qty: 35 }], note: 'ตัดสายจากม้วนที่ไซต์' }, eng).doc.at = at(8);
+    D.issue(s, { whId: 'W-BN', jobId: 'J-25-010', lines: [{ productId: 'P-0006', qty: 20 }], note: 'เทปหมด รอของเข้า' }, eng).doc.at = at(9);
+    D.submitOpening(s, { productId: 'P-0023', whId: 'W-BN', qty: 40, kind: 'opening' }, eng).cc.at = at(10);
+    s.audit.forEach((x, i) => { x.at = at(8 + i); });
+    s.notifs = [];
+  }
+  function loadDomain() { // Node: โหลดเหมือน tests/_load.js
+    const D = require('./domain.js');
+    ['stock', 'returns', 'scan', 'products', 'jobs', 'opening', 'receiving'].forEach((f) => require('./domain/' + f + '.js'));
+    return D;
   }
 
   const Seed = { build };

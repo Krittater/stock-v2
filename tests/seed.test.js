@@ -96,7 +96,8 @@ test('v3 shape: shelves, rolls, new fields', () => {
   }
   assert.ok(s.products.every(p => p.active === true && p.needsApproval === false && Array.isArray(p.photos) && p.buyFactor === 1));
   assert.ok(s.categories.every(c => c.needsApproval === false));
-  assert.deepEqual([s.notifs, s.audit, s.returns], [[], [], []]);
+  assert.deepEqual([s.notifs, s.returns], [[], []]);
+  assert.equal(s.audit.length, 3); // ประวัติจากข้อมูลเดโม 3 รายการ (ดูเทสต์ demo data)
   assert.equal(s.settings.openingLocked, false);
   assert.equal(s.counters.R, s.rolls.length); assert.equal(s.counters.RT, 0);
   assert.ok(s.jobs.every(j => 'ownerId' in j && 'closedAt' in j && j.note === ''));
@@ -116,5 +117,25 @@ test('cable products are rolls; meter stock split into rolls with unchanged tota
   // ยอดต่อสินค้าต่อคลังเท่ากับยอดเมตรเดิม (ก่อนแตกม้วน): ตรวจจากยอดรวมใน baseline ของ P-0001
   assert.equal(D.totalQty(s, 'P-0001'), 1672);
   assert.equal(D.totalQty(s, 'P-0012'), 484);
+  assert.equal(D.totalQty(s, 'P-0007'), 469); // เดิม 504 ลดลง 35 เพราะใบเบิกเดโม REQ-690022 ตัดจากม้วน
   for (const r of s.rolls) assert.equal(r.shelf, 'ทั่วไป');
+});
+
+test('demo data: roll issue with real cuts, waiting requisition with open PR, engineer opening CC', () => {
+  const eng = s.users[0];
+  const roll = s.docs.find((d) => d.lines.some((l) => l.cuts && l.cuts.length));
+  assert.equal(roll.by, 'U-ENG'); assert.equal(roll.status, 'posted'); assert.equal(roll.fill, 'full');
+  const cut = roll.lines[0].cuts[0];
+  assert.equal(cut.cut, 35); assert.equal(s.rolls.find((r) => r.id === cut.rollId).length, cut.left); // ม้วนที่ตัดมีจริง ยาวเหลือตามที่บันทึก
+  assert.ok(D.returnable(s, eng).some((x) => x.doc.id === roll.id)); // คืนได้ทันที (RT-AC6)
+  assert.equal(D.qtyOf(s, 'P-0007', 'W-BN'), 194); // เดิม 229 ลดลงเท่าที่เบิก 35
+  const wait = s.docs.find((d) => d.fill === 'waiting');
+  assert.equal(wait.lines[0].waiting, 20);
+  const pr = s.prs.find((r) => r.reqId === wait.id);
+  assert.ok(pr && pr.status === 'open' && pr.productId === 'P-0006' && wait.prIds.includes(pr.id)); // RC-AC5
+  assert.equal(s.ccs.length, 1);
+  assert.deepEqual([s.ccs[0].stage, s.ccs[0].by, s.ccs[0].kind], ['store', 'U-ENG', 'opening']);
+  assert.equal(D.approvalItems(s, s.users[1]).ccs.length, 1); // Store เห็นในคิวทันที
+  assert.equal(D.qtyOf(s, s.ccs[0].productId, 'W-BN'), 0); // ยอดรอยืนยันยังไม่ลงคลัง
+  assert.ok(s.audit.every((a) => a.at.startsWith('2026-10-31'))); // เวลาคงที่
 });

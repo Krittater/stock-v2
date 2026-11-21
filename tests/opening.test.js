@@ -96,15 +96,16 @@ test('OS-AC8 CSV: unknown code row is flagged, import refused until the bad row 
 });
 test('OS-AC9 approvalItems: store sees only its CCs + engineer receipts; engineer nothing', () => {
   const b = base();
+  const seeded = b.s.ccs.map((c) => c.id); // ข้อมูลตัวอย่างมียอดตั้งต้นของวิศวกรรอ Store อยู่ 1 รายการ
   const r = mk(b, { initial: { whId: W, qty: 3 } }, b.eng);
   const na = mkNA(b); D.submitOpening(b.s, { productId: na.id, whId: W, qty: 1, kind: 'found' }, b.store);
   b.s.settings.requireApproval = true;
   D.issue(b.s, { whId: W, jobId: JOB, lines: [{ productId: 'P-0002', qty: 1 }] }, b.eng);
   const rc = D.receive(b.s, { whId: W, lines: [{ productId: 'P-0002', qty: 1 }] }, b.eng);
   const st = D.approvalItems(b.s, b.store);
-  assert.deepEqual(st.ccs.map((c) => c.id), [r.opening.cc.id]); assert.deepEqual(st.issues, []); assert.deepEqual(st.receipts.map((d) => d.id), [rc.id]);
+  assert.deepEqual(st.ccs.map((c) => c.id), [...seeded, r.opening.cc.id]); assert.deepEqual(st.issues, []); assert.deepEqual(st.receipts.map((d) => d.id), [rc.id]);
   const hd = D.approvalItems(b.s, b.head);
-  assert.equal(hd.ccs.length, 2); assert.ok(hd.issues.length >= 1); assert.equal(hd.receipts.length, 1);
+  assert.equal(hd.ccs.length, seeded.length + 2); assert.ok(hd.issues.length >= 1); assert.equal(hd.receipts.length, 1);
   assert.deepEqual(D.approvalItems(b.s, b.eng), { issues: [], receipts: [], ccs: [] });
 });
 test('OS-G2 found stock for an existing product posts at once for store', () => {

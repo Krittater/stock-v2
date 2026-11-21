@@ -22,6 +22,7 @@
     { name: 'jobs', label: 'โครงการ / งาน', icon: 'pi-briefcase', dup: true },
     { name: 'users', label: 'ผู้ใช้งานและสิทธิ์', icon: 'pi-users' },
     { name: 'opening', label: 'ยอดยกมา', icon: 'pi-file-import', head: true },
+    { name: 'history', label: 'ประวัติการใช้งาน', icon: 'pi-history', head: true },
   ];
   const TITLES = {};
   for (const i of [...SETTINGS, ...NAV]) TITLES[i.name] = i.label;

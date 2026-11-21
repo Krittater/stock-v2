@@ -6,7 +6,7 @@
   --app-card: var(--p-content-background, #fff);
   --app-border: var(--p-content-border-color, #e7e5e4);
   --app-text: var(--p-surface-900, #1c1917);
-  --app-muted: var(--p-surface-500, #78716c);
+  --app-muted: var(--p-surface-600, #57534e);
   --nav-active-bg: var(--p-primary-50);
   --nav-active-fg: var(--p-primary-700);
   --nav-hover-bg: var(--p-surface-100);
@@ -828,3 +828,24 @@ body {
 .op-done { color: #15803d; } .app-dark .op-done { color: #86efac; }
 .op-locked { color: #b45309; } .app-dark .op-locked { color: #fcd34d; }
 @media (max-width: 767px) { .op-foot .p-button { flex: 1; } }
+
+/* ---- ประวัติการใช้งาน ---- */
+.history-page .page-header { margin: 4px 0 16px; }
+.hs-main { padding: 12px; min-width: 0; }
+.hs-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 12px; }
+.hs-field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--app-muted); min-width: 160px; flex: 1 1 160px; }
+.hs-field .p-select { min-height: 44px; }
+.hs-date { min-height: 44px; padding: 0 10px; font: inherit; font-size: 15px; color: inherit; background: transparent; border: 1px solid var(--app-border); border-radius: 8px; }
+.hs-filters .p-button { min-height: 44px; }
+.hs-table .p-datatable-table-container { overflow-x: auto; }
+.hs-table .p-datatable-table { min-width: 760px; }
+.hs-table .p-datatable-thead > tr > th { font-size: 14px; white-space: nowrap; }
+.hs-table .p-datatable-tbody > tr > td { padding: 8px 10px; font-size: 15px; vertical-align: top; }
+.hs-table .hs-when { white-space: nowrap; }
+.hs-table .hs-text { min-width: 260px; }
+
+/* ---- contrast ≥ 4.5:1 (จาก ux-ui-audit): ปุ่มแดง/เทาแบบเส้นขอบ ในโหมดสว่าง ---- */
+:root:not(.app-dark) .p-button-danger.p-button-outlined, :root:not(.app-dark) .p-button-danger.p-button-text { color: #b91c1c; }
+:root:not(.app-dark) .p-button-secondary.p-button-outlined, :root:not(.app-dark) .p-button-secondary.p-button-text { color: var(--p-surface-700); }
+.pill.active .pill-count { background: rgb(0 0 0 / .22); }
+.p-toast .p-toast-close-button { width: 44px; height: 44px; }
