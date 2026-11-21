@@ -66,6 +66,17 @@
     for (const r of rollsOfProduct(state, productId)) if (r.whId === whId && !qc.includes(r.shelf)) t += r.length;
     return +t.toFixed(2);
   };
+  // ยอดที่เบิกได้ = ยอดจริง − ของที่กันไว้ให้ใบเบิกที่รอ
+  const RESERVING = new Set(['partial', 'waiting', 'ready']);
+  const reservedAt = (state, productId, whId) => {
+    let t = 0;
+    for (const d of state.docs) {
+      if (d.type !== 'issue' || d.status !== 'posted' || d.whId !== whId || !RESERVING.has(d.fill)) continue;
+      for (const l of d.lines) if (l.productId === productId) t += l.reserved || 0;
+    }
+    return +t.toFixed(2);
+  };
+  const available = (state, productId, whId) => Math.max(0, +(qtyOf(state, productId, whId) - reservedAt(state, productId, whId)).toFixed(2));
   const totalQty = (state, productId) =>
     state.warehouses.reduce((sum, w) => sum + qtyOf(state, productId, w.id), 0);
 
@@ -191,7 +202,7 @@
       const total = lines.length;
       let missing = 0, zero = 0;
       for (const l of lines) {
-        const have = qtyOf(state, l.productId, wh.id);
+        const have = available(state, l.productId, wh.id);
         if (l.qty > have) missing++;
         if (have <= 0) zero++;
       }
@@ -343,6 +354,7 @@
       const pr = l.prId && state.prs.find((r) => r.id === l.prId);
       if (pr) applyPR(state, pr, l.qty);
     }
+    for (const id of new Set(doc.lines.map((l) => l.productId))) Domain.reserveForWaiting(state, id, doc.whId);
     Domain.log(state, actor, 'receive', doc.id, 'รับของเข้าคลัง ' + doc.whId);
   }
 
@@ -387,8 +399,9 @@
     const prs = [];
     let short = 0, got = 0;
     for (const l of doc.lines) {
-      l.issued = Math.min(l.qty, qtyOf(state, l.productId, doc.whId));
+      l.issued = Math.min(l.qty, available(state, l.productId, doc.whId));
       if (l.issued > 0) { const o = Domain.stockOut(state, { productId: l.productId, whId: doc.whId, qty: l.issued }); l.cuts = o.cuts; l.shelves = o.shelves; got++; }
+      l.waiting = +(l.qty - l.issued).toFixed(2); l.reserved = 0;
       if (l.issued < l.qty) {
         short++;
         const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: doc.whId, qty: +(l.qty - l.issued).toFixed(2), received: 0, status: 'open', reqId: doc.id };
@@ -396,6 +409,7 @@
       }
     }
     doc.status = 'posted';
+    doc.fill = !short ? 'full' : got ? 'partial' : 'waiting';
     Domain.log(state, actor, 'issue', doc.id, 'เบิกของ ' + doc.lines.length + ' รายการ');
     return { doc, outcome: !short ? 'full' : got ? 'partial' : 'waiting', prs };
   }
@@ -515,6 +529,7 @@
         note: 'ปรับยอดจากรอบนับ ' + count.id, by: actor.id, at: new Date().toISOString(),
       };
       state.docs.push(adjust);
+      for (const l of changed) if (diffOf(l) > 0) Domain.reserveForWaiting(state, l.productId, count.whId);
     }
     Domain.log(state, actor, 'count.close', count.id, 'ปิดรอบนับ ปรับ ' + changed.length + ' รายการ');
     state.warehouses.find((w) => w.id === count.whId).countId = null;
@@ -532,7 +547,7 @@
   }
 
   const Domain = {
-    DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyAt, qtyOf, totalQty,
+    DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyAt, qtyOf, available, totalQty,
     shelves, plainShelves, qcCodes, qcShelf, similarity, touchRolls,
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,

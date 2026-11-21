@@ -25,7 +25,7 @@
           d,
           counting: !!state.warehouses.find((w) => w.id === d.whId)?.countId,
           lines: d.lines.map((l) => {
-            const have = Domain.qtyOf(state, l.productId, d.whId);
+            const have = Domain.available(state, l.productId, d.whId);
             return { l, p: byId.value.get(l.productId), have, short: l.qty > have ? +(l.qty - have).toFixed(2) : 0 };
           }),
         })));

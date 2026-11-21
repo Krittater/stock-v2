@@ -19,7 +19,7 @@
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.warn('บันทึก localStorage ไม่ได้', e); }
   }
   const saveSoon = () => { clearTimeout(timer); timer = setTimeout(save, 300); };
-  watch(() => [state.cart, state.settings, state.ui, state.currentUserId], saveSoon, { deep: true });
+  watch(() => [state.cart, state.settings, state.ui, state.currentUserId, state.notifs], saveSoon, { deep: true });
   window.addEventListener('pagehide', () => { if (timer) save(); });
 
   const user = computed(() => Domain.currentUser(state));

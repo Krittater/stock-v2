@@ -104,6 +104,9 @@
       const pending = computed(() => state.docs
         .filter((d) => d.status === 'pending' && (d.type === 'issue' || d.type === 'receive'))
         .sort((a, b) => b.at.localeCompare(a.at)));
+      const notes = computed(() => (state.notifs || []).filter((n) => n.to === user.value.id && !n.read).reverse());
+      const total = computed(() => pending.value.length + notes.value.length);
+      const openNote = (n) => { n.read = true; bell.value.hide(); location.hash = n.link || '#/'; };
       const nameOf = (id) => state.users.find((u) => u.id === id)?.name || id;
       const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
       const openDoc = (d) => { bell.value.hide(); go(d.type === 'issue' ? 'approvals' : 'receive'); };
@@ -113,7 +116,7 @@
       };
       onMounted(() => window.addEventListener('keydown', onKey));
       onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
-      return { q, input, bell, company, companies, pending, nameOf, when, openDoc, search };
+      return { q, input, bell, company, companies, pending, notes, total, openNote, nameOf, when, openDoc, search };
     },
     template: `<header class="topbar">
       <button type="button" class="icon-btn menu-btn" aria-label="เปิดเมนู" @click="$emit('menu')"><i class="pi pi-bars" aria-hidden="true"></i></button>
@@ -123,20 +126,24 @@
           aria-label="ค้นหาวัสดุ" @keydown.enter="search">
         <kbd>⌘K</kbd>
       </div>
-      <button type="button" class="icon-btn bell" :aria-label="'รายการรอดำเนินการ ' + pending.length + ' รายการ'" @click="bell.toggle($event)">
+      <button type="button" class="icon-btn bell" :aria-label="'รายการรอดำเนินการ ' + total + ' รายการ'" @click="bell.toggle($event)">
         <i class="pi pi-bell" aria-hidden="true"></i>
-        <span v-if="pending.length" class="badge num">{{ pending.length }}</span>
+        <span v-if="total" class="badge num">{{ total }}</span>
       </button>
       <p-popover ref="bell">
         <div class="bell-menu">
           <div class="menu-label">รอดำเนินการ ({{ pending.length }})</div>
-          <p v-if="!pending.length" class="muted">ไม่มีรายการรอดำเนินการ</p>
+          <p v-if="!total" class="muted">ไม่มีรายการรอดำเนินการ</p>
           <button v-for="d in pending" :key="d.id" type="button" class="bell-row" @click="openDoc(d)">
             <i :class="['pi', d.type === 'issue' ? 'pi-file-check' : 'pi-download']" aria-hidden="true"></i>
             <span class="min-w-0">
               <span class="bell-title"><doc-id :id="d.id" /> · {{ d.type === 'issue' ? 'ใบเบิกรออนุมัติ' : 'ใบรับรอยืนยันยอด' }}</span>
               <span class="bell-sub">{{ nameOf(d.by) }} · {{ when(d.at) }}</span>
             </span>
+          </button>
+          <button v-for="n in notes" :key="n.id" type="button" class="bell-row" @click="openNote(n)">
+            <i class="pi pi-inbox" aria-hidden="true"></i>
+            <span class="min-w-0"><span class="bell-title">{{ n.text }}</span><span class="bell-sub">{{ when(n.at) }}</span></span>
           </button>
         </div>
       </p-popover>

@@ -135,8 +135,49 @@
   }
   const unread = (state, userId) => (state.notifs || []).filter((n) => n.to === userId && !n.read).length;
 
+  // ของเข้าคลัง → กันให้ใบเบิกที่รอ (ใบเก่าสุดก่อน) เท่าที่เบิกได้จริง; ครบทุกบรรทัด = ready + แจ้งผู้เบิก
+  function reserveForWaiting(state, productId, whId) {
+    const docs = state.docs
+      .filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && (d.fill === 'partial' || d.fill === 'waiting'))
+      .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+    const touched = [];
+    for (const d of docs) {
+      let free = D.available(state, productId, whId);
+      for (const l of d.lines) {
+        if (l.productId !== productId || free <= 0) continue;
+        const add = Math.min(free, r2(l.waiting - l.reserved));
+        if (add <= 0) continue;
+        l.reserved = r2(l.reserved + add); free = r2(free - add);
+        if (!touched.includes(d)) touched.push(d);
+      }
+      if (touched.includes(d) && d.lines.every((l) => l.reserved >= l.waiting - 1e-9)) {
+        d.fill = 'ready';
+        notify(state, [d.by], 'info', `ของที่รอสำหรับ ${d.id} เข้าแล้ว ระบบกันไว้ให้แล้ว`, '#/');
+      }
+    }
+    return touched;
+  }
+
+  // จ่ายของที่กันไว้ให้ใบเบิก (Store/หัวหน้าจ่ายแทนได้ วิศวกรเฉพาะใบตัวเอง)
+  function pickReserved(state, docId, actor) {
+    const doc = state.docs.find((d) => d.id === docId);
+    if (!doc || doc.type !== 'issue' || doc.status !== 'posted') throw new DomainError('doc_missing', 'ไม่พบใบเบิกที่จ่ายได้');
+    if (actor.role === 'engineer' && doc.by !== actor.id) throw new DomainError('forbidden', D.FORBIDDEN);
+    const lines = doc.lines.filter((l) => l.reserved > 0);
+    if (!lines.length) throw new DomainError('nothing_reserved', 'ยังไม่มีของที่กันไว้ให้ใบนี้');
+    for (const l of lines) {
+      const o = stockOut(state, { productId: l.productId, whId: doc.whId, qty: l.reserved });
+      l.cuts = [...(l.cuts || []), ...o.cuts]; l.shelves = [...(l.shelves || []), ...o.shelves];
+      l.issued = r2(l.issued + l.reserved); l.waiting = r2(l.waiting - l.reserved); l.reserved = 0;
+    }
+    doc.fill = doc.lines.every((l) => l.waiting <= 0) ? 'full' : doc.lines.some((l) => l.issued > 0) ? 'partial' : 'waiting';
+    log(state, actor, 'issue.pick', doc.id, 'จ่ายของที่กันไว้ ' + lines.length + ' รายการ');
+    if (actor.id !== doc.by) notify(state, [doc.by], 'info', `${doc.id} จ่ายของที่รอให้แล้ว`, '#/');
+    return doc;
+  }
+
   Object.assign(D, {
-    qcStock, stockIn, stockOut, putStock, log, auditFor, notify, unread,
+    reserveForWaiting, pickReserved, qcStock, stockIn, stockOut, putStock, log, auditFor, notify, unread,
     FORBIDDEN: 'คุณทำรายการนี้ไม่ได้ ให้หัวหน้าทำแทน หรือขอให้หัวหน้าเปิดสิทธิ์',
   });
   if (typeof module !== 'undefined') module.exports = D;

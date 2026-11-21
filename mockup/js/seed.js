@@ -232,13 +232,13 @@
     const lim = Math.min(40, n);
     const mkLines = (i, issued) => Array.from({ length: 1 + (i % 3) }, (_, j) => {
       const qty = ((i + j) * 3) % 20 + 5;
-      return { productId: 'P-' + pad(((i * 7 + j * 5) % lim) + 1, 4), qty, ...(issued ? { issued: qty } : {}) };
+      return { productId: 'P-' + pad(((i * 7 + j * 5) % lim) + 1, 4), qty, ...(issued ? { issued: qty, waiting: 0, reserved: 0 } : {}) };
     });
     const POSTED_ISSUE = 14, PENDING = 7, RECEIVE = 6;
     const docs = [];
     for (let i = 0; i < POSTED_ISSUE; i++) {
       docs.push({ id: 'REQ-69' + pad(i + 1, 4), type: 'issue', status: 'posted', whId: i % 5 === 4 ? 'W-A' : 'W-BN',
-        jobId: openJobs[i % openJobs.length].id, lines: mkLines(i, true), note: '', by: 'U-ENG', at: iso(30 - i * 2), prIds: [] });
+        jobId: openJobs[i % openJobs.length].id, lines: mkLines(i, true), note: '', by: 'U-ENG', at: iso(30 - i * 2), prIds: [], fill: 'full' });
     }
     for (let i = 0; i < RECEIVE; i++) {
       docs.push({ id: 'RC-69' + pad(i + 1, 4), type: 'receive', status: 'posted', whId: 'W-BN',

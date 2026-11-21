@@ -1,7 +1,7 @@
 // หน้าแรก: KPI · ทางลัด · ความเคลื่อนไหวล่าสุด (docs ทุกชนิด) + dialog รายละเอียดบรรทัด
 (function () {
   const { ref, computed } = Vue;
-  const { state, user, go } = AppState;
+  const { state, user, go, act } = AppState;
 
   const TYPE = { issue: ['เบิก', 'warn'], receive: ['รับ', 'info'], adjust: ['ปรับยอด', 'secondary'] };
   // [ข้อความ, tone] — ข้อความเสมอ ไม่พึ่งสีอย่างเดียว
@@ -13,6 +13,7 @@
   // ใบเบิกที่ลงยอดแล้วดูจากบรรทัด: ครบทุกบรรทัด = จ่ายแล้ว · ไม่ได้ของเลย = รอของเข้า · นอกนั้น = จ่ายบางส่วน
   function statusOf(d) {
     if (d.type === 'issue' && d.status === 'posted') {
+      if (d.fill === 'ready') return ['รอของเข้า — กันของไว้แล้ว', 'tone-blue'];
       const got = d.lines.map((l) => l.issued ?? l.qty); // ใบเก่าไม่มี issued = จ่ายครบ
       if (d.lines.every((l, i) => got[i] >= l.qty)) return ['จ่ายแล้ว', 'tone-green'];
       if (got.every((n) => !(n > 0))) return ['รอของเข้า', 'tone-orange'];
@@ -40,7 +41,9 @@
       const first = ref(0);
       const sel = ref(null);
       const selLines = computed(() => sel.value && sel.value.lines.map((l) => ({ l, p: byId.value.get(l.productId) })));
-      return { user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, when, go, Domain };
+      const canPick = (d) => d.type === 'issue' && d.lines.some((l) => l.reserved > 0) && (user.value.role !== 'engineer' || d.by === user.value.id);
+      const pick = (d) => act((s, u) => Domain.pickReserved(s, d.id, u), (r) => `จ่ายของที่กันไว้ให้ ${r.id} แล้ว`);
+      return { canPick, pick, user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, when, go, Domain };
     },
     template: `<div class="home-page">
       <page-header icon="pi-home" title="หน้าแรก" :subtitle="'สวัสดี ' + user.name" />
@@ -71,7 +74,8 @@
           <p-column header="รายการ" headerClass="col-num" bodyClass="col-num"><template #body="{ data }"><span class="num">{{ data.d.lines.length }}</span></template></p-column>
           <p-column header="โดย"><template #body="{ data }">{{ nameOf(data.d.by) }}</template></p-column>
           <p-column header="สถานะ">
-            <template #body="{ data }"><span class="status-tag" :class="data.status[1]"><span class="dot" aria-hidden="true"></span>{{ data.status[0] }}</span></template>
+            <template #body="{ data }"><span class="status-tag" :class="data.status[1]"><span class="dot" aria-hidden="true"></span>{{ data.status[0] }}</span>
+              <p-button v-if="canPick(data.d)" label="จ่ายของ" size="small" class="ml-2" @click.stop="pick(data.d)" /></template>
           </p-column>
           <template #empty><p class="muted">ยังไม่มีความเคลื่อนไหว</p></template>
         </p-datatable>

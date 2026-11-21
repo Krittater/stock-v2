@@ -85,10 +85,10 @@
       // ---------- แถวในตาราง ----------
       const rowWh = reactive({}); // คลังที่ดูต่อแถว (ไม่ persist) — ไม่ได้เลือก = คลังของใบเบิก
       const whOf = (p) => rowWh[p.id] || cart.value.whId;
-      const rowQty = (p) => Domain.qtyOf(state, p.id, whOf(p));
+      const rowQty = (p) => Domain.available(state, p.id, whOf(p));
       const rowStatus = (p) => (state.warehouses.find((w) => w.id === whOf(p))?.countId ? 'counting' : Domain.stockStatus(state, p, whOf(p)));
       const setRowWh = (p, id) => { rowWh[p.id] = id === cart.value.whId ? undefined : id; };
-      const whOptions = (p) => state.warehouses.map((w) => ({ id: w.id, label: `${w.name} · ${fmt(Domain.qtyOf(state, p.id, w.id), p.unit)}` }));
+      const whOptions = (p) => state.warehouses.map((w) => ({ id: w.id, label: `${w.name} · ${fmt(Domain.available(state, p.id, w.id), p.unit)}` }));
       const cartStatus = (p) => Domain.stockStatus(state, p, cart.value.whId);
 
       const flashId = ref(null);
@@ -105,7 +105,7 @@
 
       const detail = ref(null);
       const detailWh = computed(() => detail.value && state.warehouses.map((w) => ({
-        w, qty: Domain.qtyOf(state, detail.value.id, w.id), status: w.countId ? 'counting' : Domain.stockStatus(state, detail.value, w.id),
+        w, qty: Domain.available(state, detail.value.id, w.id), status: w.countId ? 'counting' : Domain.stockStatus(state, detail.value, w.id),
       })));
       const detailPRs = computed(() => detail.value && state.prs.filter((r) => r.productId === detail.value.id && r.status === 'open'));
       const addFromDetail = () => { add(detail.value); detail.value = null; };
@@ -122,7 +122,7 @@
       // ---------- ตะกร้า ----------
       const cartRows = computed(() => cart.value.lines.map((l) => {
         const p = byId.value.get(l.productId);
-        const have = Domain.qtyOf(state, l.productId, cart.value.whId);
+        const have = Domain.available(state, l.productId, cart.value.whId);
         return { l, p, have, short: l.qty > have ? +(l.qty - have).toFixed(2) : 0 };
       }).filter((r) => r.p));
       const totalQty = computed(() => cart.value.lines.reduce((s, l) => s + (l.qty || 0), 0));
@@ -249,7 +249,7 @@
               <div class="it-scroll">
                 <table class="it">
                   <thead><tr>
-                    <th>รายการสินค้า</th><th class="col-num">คงเหลือ</th><th>สถานะคลัง</th><th><span class="sr-only">คลัง</span></th>
+                    <th>รายการสินค้า</th><th class="col-num">เบิกได้</th><th>สถานะคลัง</th><th><span class="sr-only">คลัง</span></th>
                     <th>หน่วย</th><th><span class="sr-only">เพิ่มเข้าใบเบิก</span></th>
                   </tr></thead>
                   <tbody>
