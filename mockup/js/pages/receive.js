@@ -56,7 +56,7 @@
         const out = pr ? Domain.outstanding(pr) : 0;
         if (!lines.length && !whTouched && pr) {
           const w = whOf(pr.whId);
-          if (w && w.active !== false) whId.value = w.id;
+          if (w && w.active !== false && !w.countId) whId.value = w.id;
         }
         if (pr && pr.vendor && !vendor.value) vendor.value = pr.vendor;
         lines.push({
@@ -68,9 +68,14 @@
       };
       const removeLine = (l) => { lines.splice(lines.indexOf(l), 1); if (!lines.length) { whTouched = false; overReason.value = ''; } };
       const factor = (p) => Math.max(1, p.buyFactor || 1);
+      // แปลงหน่วยจากยอดหน่วยหลักที่จำไว้ (anchor) ถ้าช่องยังไม่ถูกแก้ จะได้ไม่เพี้ยนเมื่อสลับไปมา
       const setUnit = (l, p, to) => {
         if (to === l.unit) return;
-        if (l.qty != null && l.qty !== '') l.qty = r2(to === 'buy' ? l.qty / factor(p) : l.qty * factor(p));
+        if (l.qty != null && l.qty !== '') {
+          const base = l.anchor && l.anchor.shown === l.qty ? l.anchor.base : r2(l.qty * (l.unit === 'buy' ? factor(p) : 1));
+          l.qty = to === 'buy' ? r2(base / factor(p)) : base;
+          l.anchor = { base, shown: l.qty };
+        }
         l.unit = to;
       };
       const baseOf = (l, p) => (p.isRoll ? r2(l.rolls.reduce((a, v) => a + (Number(v) || 0), 0)) : r2((Number(l.qty) || 0) * (l.unit === 'buy' ? factor(p) : 1)));
@@ -90,7 +95,7 @@
       // รับไม่ครบ / รับเกิน (ตามกติกาเดียวกับ domain)
       const coverage = computed(() => Domain.receiveCoverage(state, rows.value.filter((r) => r.l.prId).map((r) => ({ prId: r.l.prId, qty: r.base, condition: r.l.condition }))));
       const partial = computed(() => coverage.value.some((c) => c.left > 1e-9));
-      const overs = computed(() => coverage.value.filter((c) => c.left < -1e-9).map((c) => `รับเกินที่สั่ง ${fmt(-c.left, byId.value.get(c.productId)?.unit)} ใส่เหตุผล`));
+      const overs = computed(() => coverage.value.filter((c) => c.left < -1e-9).map((c) => Domain.overMessage(-c.left, byId.value.get(c.productId)?.unit)));
 
       const missing = computed(() => {
         const m = [];
@@ -154,7 +159,7 @@
       const applyPr = (id) => { const r = id && prById(id); if (r && r.status === 'open' && Domain.outstanding(r) > 0) { addLine(r.productId, r); tab.value = 'receive'; } };
       applyPr(route.query.pr);
       watch(() => route.query.pr, applyPr);
-      watch(() => user.value.id, () => { lines.splice(0); whTouched = false; overReason.value = ''; if (tab.value === 'pending') tab.value = 'receive'; });
+      watch(() => user.value.id, () => { lines.splice(0); whTouched = false; overReason.value = ''; invoiceNo.value = ''; vendor.value = ''; note.value = ''; receivedAt.value = Domain.today(); if (tab.value === 'pending') tab.value = 'receive'; });
 
       // ---------- รอยืนยันยอด ----------
       const pend = computed(() => {
@@ -164,7 +169,7 @@
       const pendCount = computed(() => pend.value.receipts.length + pend.value.ccs.length);
       const text = reactive({}); // docId → { reason (เหตุผลรับเกิน/ไม่มีของ), rejecting }
       const tx = (id) => text[id] || (text[id] = { reason: '', rejecting: false });
-      const docOver = (d) => (d.overReason ? [] : Domain.receiveCoverage(state, d.lines).filter((c) => c.left < -1e-9).map((c) => `รับเกินที่สั่ง ${fmt(-c.left, byId.value.get(c.productId)?.unit)} ใส่เหตุผล`));
+      const docOver = (d) => (d.overReason ? [] : Domain.receiveCoverage(state, d.lines).filter((c) => c.left < -1e-9).map((c) => Domain.overMessage(-c.left, byId.value.get(c.productId)?.unit)));
       const confirmDoc = (d) => act((s, u) => Domain.confirmReceipt(s, d.id, u, true, tx(d.id).reason), 'ยืนยันยอด ' + d.id + ' แล้ว เพิ่มสต็อกเรียบร้อย');
       const rejectDoc = (d) => act((s, u) => Domain.confirmReceipt(s, d.id, u, false, tx(d.id).reason), 'บันทึก ' + d.id + ' ว่าไม่มีของแล้ว');
       const ccQty = (c) => (c.kind === 'count' ? c.diff : c.rollLengths ? r2(c.rollLengths.reduce((a, b) => a + b, 0)) : c.qty);
@@ -367,6 +372,7 @@
                 <div class="rc-pending-top"><doc-id :id="c.id" /> <span class="muted">· {{ KIND[c.kind] || c.kind }} · {{ whName(c.whId) }}<template v-if="c.kind !== 'count'"> · ชั้น {{ c.shelf }}</template> · โดย {{ userName(c.by) }}</span></div>
                 <ul class="rc-pending-lines"><li>{{ byId.get(c.productId)?.name }} <strong>{{ c.kind === 'count' && c.diff > 0 ? '+' : '' }}{{ fmt(ccQty(c), byId.get(c.productId)?.unit) }}</strong>
                   <span class="muted"> · {{ c.stage === 'head' ? 'รอหัวหน้าอนุมัติ' : 'รอ Store ยืนยัน' }}</span></li></ul>
+                <p v-if="c.stage === 'store' && byId.get(c.productId)?.needsApproval" class="rt-msg"><i class="pi pi-info-circle" aria-hidden="true"></i> สินค้านี้ต้องให้หัวหน้าอนุมัติต่อ</p>
                 <template v-if="canAct(c)">
                   <div v-if="tx(c.id).rejecting" class="field rc-mt"><label :for="'rj' + c.id">เหตุผล (จะแจ้งผู้ขอ) <span class="req">*</span></label>
                     <p-inputtext :id="'rj' + c.id" v-model="tx(c.id).reason" fluid /></div>

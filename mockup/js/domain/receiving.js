@@ -68,6 +68,8 @@
     }).filter(Boolean);
   }
 
+  const overMessage = (over, unit) => `รับเกินที่สั่ง ${formatQty(over, unit)} ใส่เหตุผล`;
+
   // แถวม้วนเริ่มต้น: ม้วนละ size เศษอยู่ม้วนสุดท้าย
   function defaultRollLengths(qty, size) {
     const n = Math.ceil(r2(qty) / size - 1e-9);
@@ -96,7 +98,7 @@
       return D.stockIn(state, { productId: l.productId, whId: doc.whId, shelf: l.shelf, qty: l.qty, rollLengths: p.isRoll ? l.rollLengths : undefined, batch: l.batch });
     });
     const o = receiveCoverage(state, doc.lines).find((c) => c.left < -1e-9);
-    if (o && !trim(doc.overReason)) throw new DomainError('over_receive', `รับเกินที่สั่ง ${formatQty(-o.left, prodOf(state, o.productId).unit)} ใส่เหตุผล`);
+    if (o && !trim(doc.overReason)) throw new DomainError('over_receive', overMessage(-o.left, prodOf(state, o.productId).unit));
     return ins;
   }
 
@@ -160,6 +162,6 @@
     return doc;
   }
 
-  Object.assign(D, { receive, confirmReceipt, outstanding, receiveCoverage, defaultRollLengths });
+  Object.assign(D, { receive, confirmReceipt, outstanding, receiveCoverage, defaultRollLengths, overMessage });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

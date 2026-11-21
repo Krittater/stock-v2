@@ -283,3 +283,17 @@ test('receiveCoverage: ขาด/เกิน/reject ไม่นับ · defau
   assert.deepEqual(D.defaultRollLengths(300, 100), [100, 100, 100]);
   assert.deepEqual(D.defaultRollLengths(0, 100), []);
 });
+
+test('confirmReceipt: ปฏิเสธเก็บ rejectReason + แจ้งผู้ส่ง · รับเกินใส่ overReason ตอนยืนยัน · overMessage', () => {
+  const s = mini(); s.prs.push({ id: 'PR-1', productId: 'P-0001', whId: W, qty: 20, received: 0, status: 'open', reqId: null });
+  const a = D.receive(s, { whId: W, lines: [{ productId: 'P-0001', prId: 'PR-1', qty: 10 }] }, engA);
+  const n0 = s.notifs.length;
+  D.confirmReceipt(s, a.id, store, false, 'ไม่มีของมาจริง');
+  assert.equal(a.rejectReason, 'ไม่มีของมาจริง'); assert.ok(s.notifs.length > n0);
+  assert.equal(s.notifs[s.notifs.length - 1].to, engA.id);
+  const c = D.receive(s, { whId: W, lines: [{ productId: 'P-0001', prId: 'PR-1', qty: 15 }] }, engA);
+  const b = D.receive(s, { whId: W, lines: [{ productId: 'P-0001', prId: 'PR-1', qty: 15 }] }, engA);
+  D.confirmReceipt(s, c.id, store, true);
+  assert.throws(() => D.confirmReceipt(s, b.id, store, true), { message: D.overMessage(10, 'ตัว') });
+  D.confirmReceipt(s, b.id, store, true, 'แถม'); assert.equal(b.overReason, 'แถม'); assert.equal(b.status, 'posted');
+});
