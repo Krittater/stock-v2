@@ -133,6 +133,9 @@
     if (!state.notifs) state.notifs = [];
     for (const to of userIds) state.notifs.push({ id: 'N-' + (state.notifs.length + 1), to, level, text, link, at: now(), read: false });
   }
+  function markRead(state, userId, id) {
+    for (const n of state.notifs || []) if (n.to === userId && (!id || n.id === id)) n.read = true;
+  }
   const unread = (state, userId) => (state.notifs || []).filter((n) => n.to === userId && !n.read).length;
 
   // ของเข้าคลัง → กันให้ใบเบิกที่รอ (ใบเก่าสุดก่อน) เท่าที่เบิกได้จริง; ครบทุกบรรทัด = ready + แจ้งผู้เบิก
@@ -165,6 +168,10 @@
     if (actor.role === 'engineer' && doc.by !== actor.id) throw new DomainError('forbidden', D.FORBIDDEN);
     const lines = doc.lines.filter((l) => l.reserved > 0);
     if (!lines.length) throw new DomainError('nothing_reserved', 'ยังไม่มีของที่กันไว้ให้ใบนี้');
+    // ตรวจทุกบรรทัดก่อนตัด (รวมต่อสินค้า) ถ้าของจริงน้อยกว่าที่กันไว้ → ไม่ตัดอะไรเลย
+    const need = {};
+    for (const l of lines) need[l.productId] = r2((need[l.productId] || 0) + l.reserved);
+    for (const [pid, n] of Object.entries(need)) if (n > D.qtyOf(state, pid, doc.whId) + 1e-9) throw new DomainError('stock_short', 'ของในคลังน้อยกว่าที่กันไว้ จ่ายไม่ได้ ให้ Store ตรวจยอด');
     for (const l of lines) {
       const o = stockOut(state, { productId: l.productId, whId: doc.whId, qty: l.reserved });
       l.cuts = [...(l.cuts || []), ...o.cuts]; l.shelves = [...(l.shelves || []), ...o.shelves];
@@ -177,7 +184,7 @@
   }
 
   Object.assign(D, {
-    reserveForWaiting, pickReserved, qcStock, stockIn, stockOut, putStock, log, auditFor, notify, unread,
+    reserveForWaiting, pickReserved, markRead, qcStock, stockIn, stockOut, putStock, log, auditFor, notify, unread,
     FORBIDDEN: 'คุณทำรายการนี้ไม่ได้ ให้หัวหน้าทำแทน หรือขอให้หัวหน้าเปิดสิทธิ์',
   });
   if (typeof module !== 'undefined') module.exports = D;

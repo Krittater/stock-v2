@@ -89,3 +89,45 @@ test('pickReserved: วิศวกรจ่ายใบตัวเองได
   D.pickReserved(s, a.id, engA);
   assert.equal(a.fill, 'partial'); assert.equal(a.lines[0].waiting, 3);
 });
+
+const addP2 = (s) => s.products.push({ id: 'P-0002', code: 'P-0002', name: 'สายแลน', unit: 'เมตร', categoryId: null, reorderPoint: 1, isRoll: true, rollSize: 100, scrapMin: 3 });
+const snap = (s) => JSON.stringify([s.stock, s.rolls]);
+
+test('ขาดหลังนับลด: pickReserved ไม่ตัดอะไรครึ่งทาง', () => {
+  const s = mini(); addP2(s);
+  const a = D.issue(s, { whId: 'W-BN', jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 5 }, { productId: 'P-0002', qty: 50 }] }, engA).doc;
+  recv(s, 5); D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 50, rollLengths: [50] }] }, store);
+  assert.equal(a.fill, 'ready');
+  const c = D.startCount(s, { whId: 'W-BN' }, head); D.setCounted(s, c.id, 'P-0002', 20); D.closeCount(s, c.id, head);
+  const before = snap(s), lines = JSON.stringify(a.lines);
+  assert.throws(() => D.pickReserved(s, a.id, store), { code: 'stock_short' });
+  assert.equal(snap(s), before); assert.equal(JSON.stringify(a.lines), lines); assert.equal(a.fill, 'ready');
+});
+
+test('pickReserved หลายบรรทัด', () => {
+  const s = mini(); addP2(s);
+  const a = D.issue(s, { whId: 'W-BN', jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 5 }, { productId: 'P-0002', qty: 50 }] }, engA).doc;
+  recv(s, 5); D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 50, rollLengths: [50] }] }, store);
+  D.pickReserved(s, a.id, store);
+  assert.equal(a.fill, 'full');
+  assert.deepEqual(a.lines.map((l) => [l.issued, l.waiting, l.reserved]), [[5, 0, 0], [50, 0, 0]]);
+  assert.equal(D.qtyOf(s, 'P-0001', 'W-BN'), 0); assert.equal(D.qtyOf(s, 'P-0002', 'W-BN'), 0);
+});
+
+test('pickReserved สินค้าม้วน: cuts และดัชนีม้วนถูกต้อง', () => {
+  const s = mini(); addP2(s);
+  const a = D.issue(s, { whId: 'W-BN', jobId: 'J-1', lines: [{ productId: 'P-0002', qty: 120 }] }, engA).doc;
+  D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 150, rollLengths: [100, 50] }] }, store);
+  assert.equal(a.lines[0].reserved, 120);
+  D.pickReserved(s, a.id, store);
+  assert.equal(a.lines[0].cuts.reduce((t, c) => t + c.cut, 0), 120);
+  assert.equal(a.fill, 'full'); assert.equal(D.qtyOf(s, 'P-0002', 'W-BN'), 30);
+  assert.equal(s.rolls.reduce((t, r) => t + r.length, 0), 30);
+  assert.equal(D.qtyAt(s, 'P-0002', 'W-BN'), 30);
+});
+
+test('markRead', () => {
+  const s = mini(); D.notify(s, ['U-3'], 'info', 'x', '#/'); D.notify(s, ['U-3'], 'info', 'y', '#/');
+  D.markRead(s, 'U-3', 'N-1'); assert.equal(D.unread(s, 'U-3'), 1);
+  D.markRead(s, 'U-3'); assert.equal(D.unread(s, 'U-3'), 0);
+});

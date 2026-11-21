@@ -106,7 +106,7 @@
         .sort((a, b) => b.at.localeCompare(a.at)));
       const notes = computed(() => (state.notifs || []).filter((n) => n.to === user.value.id && !n.read).reverse());
       const total = computed(() => pending.value.length + notes.value.length);
-      const openNote = (n) => { n.read = true; bell.value.hide(); location.hash = n.link || '#/'; };
+      const openNote = (n) => { Domain.markRead(state, user.value.id, n.id); bell.value.hide(); location.hash = n.link || '#/'; };
       const nameOf = (id) => state.users.find((u) => u.id === id)?.name || id;
       const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
       const openDoc = (d) => { bell.value.hide(); go(d.type === 'issue' ? 'approvals' : 'receive'); };
