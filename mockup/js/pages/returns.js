@@ -45,7 +45,16 @@
 
       // ---------- ใบเบิกที่คืนได้ ----------
       const docsAll = computed(() => Domain.returnable(state, user.value));
-      const docsShown = computed(() => Domain.returnable(state, user.value, text.value.trim()));
+      // กรองจาก docsAll (ไม่เรียก returnable ซ้ำ) ด้วยกติกาเดียวกับ Domain.returnable: เลขใบ ชื่องาน ชื่อ/ยี่ห้อ/รุ่นสินค้า
+      const docsShown = computed(() => {
+        const n = text.value.trim().toLowerCase();
+        if (!n) return docsAll.value;
+        return docsAll.value.filter((x) => {
+          const job = state.jobs.find((j) => j.id === x.doc.jobId);
+          return [x.doc.id, job && job.name, ...x.lines.map((l) => { const p = byId.value.get(l.productId); return p ? [p.name, p.brand, p.model].join(' ') : ''; })]
+            .some((h) => (h || '').toLowerCase().includes(n));
+        });
+      });
       const flat = (docs) => docs.flatMap((x) => x.lines.map((line) => ({
         key: x.doc.id + '|' + line.productId, doc: x.doc, by: x.by, line, p: byId.value.get(line.productId),
       }))).filter((r) => r.p);
@@ -61,12 +70,12 @@
       applyDoc(route.query.doc);
       watch(() => route.query.doc, applyDoc);
       // สลับบทบาท: ล้างสิ่งที่กรอก + ตัวกรองที่ไม่ใช่ของผู้ใช้นี้ (ไม่ใช้ ?doc= ซ้ำ)
-      watch(() => user.value.id, () => { clearAll(); if (!docOpts.value.some((o) => o.id === docFilter.value)) docFilter.value = ''; });
+      watch(() => user.value.id, () => { clearAll(); if (tab.value === 'qc' && isEng.value) tab.value = 'return'; if (!docOpts.value.some((o) => o.id === docFilter.value)) docFilter.value = ''; });
       watch(docOpts, (o) => { if (docFilter.value && !o.some((x) => x.id === docFilter.value)) docFilter.value = ''; });
 
       // ---------- ที่กรอก (ต่อแถว) ----------
       const st = reactive({}); // key → { qty, condition, rollId, shelf, photo }
-      const rev = ref(0);
+      const revs = reactive({}); // ต่อแถว: บังคับ mount ช่องจำนวนใหม่เฉพาะแถวที่ถูกปฏิเสธ
       const ent = (r) => st[r.key] || { qty: null, condition: 'ok' };
       const patch = (r, o) => { st[r.key] = { qty: null, condition: 'ok', ...st[r.key], ...o }; };
       function clearAll() { for (const k of Object.keys(st)) delete st[k]; }
@@ -74,7 +83,7 @@
       watch(docFilter, (id) => { if (activeDocId.value && id && id !== activeDocId.value) clearAll(); }); // เปลี่ยนใบ = ทิ้งที่กรอก/รูป (RT-AC9)
 
       const setQty = (r, v) => {
-        if (!blank(v) && activeDocId.value && activeDocId.value !== r.doc.id) { toast('warn', 'คืนได้ทีละใบเบิก'); rev.value++; return; }
+        if (!blank(v) && activeDocId.value && activeDocId.value !== r.doc.id) { toast('warn', 'คืนได้ทีละใบเบิก'); revs[r.key] = (revs[r.key] || 0) + 1; return; }
         patch(r, { qty: v });
       };
       const setCond = (r, v) => patch(r, v === 'damaged' ? { condition: v } : { condition: v, photo: null });
@@ -82,7 +91,6 @@
         if (!docCur.value) return;
         if (activeDocId.value && activeDocId.value !== docCur.value.doc.id) clearAll();
         for (const r of rows.value) if (r.doc.id === docCur.value.doc.id) patch(r, { qty: r.line.left });
-        rev.value++;
       };
 
       const rowErr = (r, e) => {
@@ -116,6 +124,7 @@
         return w.active === false ? `${w.name} ปิดใช้งานอยู่ เลือกคลังอื่นก่อน` : `${w.name} ถูกล็อกเพื่อตรวจนับ เลือกคลังอื่นก่อน`;
       });
       const shelfOpts = computed(() => (whId.value ? Domain.shelves(state, whId.value) : []));
+      watch(whId, () => { for (const k of Object.keys(st)) if (st[k].shelf) st[k].shelf = null; }); // ชั้นรายแถวของคลังเดิมใช้ไม่ได้
       const shelf = ref(DEFAULT_SHELF);
       watch(shelfOpts, (o) => { if (o.length && !o.includes(shelf.value)) shelf.value = o.includes(DEFAULT_SHELF) ? DEFAULT_SHELF : o[0]; });
       const hasQc = computed(() => !!(whId.value && Domain.qcShelf(state, whId.value)));
@@ -161,7 +170,7 @@
           })),
         }, u), 'บันทึกคืนของแล้ว');
         busy.value = false;
-        if (rec) { result.value = rec; clearAll(); note.value = ''; whSel.value = null; rev.value++; sheetOpen.value = false; }
+        if (rec) { result.value = rec; clearAll(); note.value = ''; whSel.value = null; sheetOpen.value = false; }
       };
 
       const sheetOpen = ref(false);
@@ -240,7 +249,7 @@
 
       return {
         state, user, Domain, COND, condLabel, fmt, whName, nameOf, jobName, when, date, isEng, isStaff, isHead, shelfLabel, tab, text, docFilter, first,
-        rows, docOpts, docCur, st, rev, ent, patch, setQty, setCond, returnAll, errOf, items, goodItems, whOpts, whSel, whId, whNote, shelfOpts, shelf, split, note,
+        rows, docOpts, docCur, st, revs, ent, patch, setQty, setCond, returnAll, errOf, items, goodItems, whOpts, whSel, whId, whNote, shelfOpts, shelf, split, note,
         hasDamaged, damagedItems, hasQc, photoBusy, onPhoto, missing, setScrap, result, busy, submit, sheetOpen, onScan, printLabels,
         loose, prodOpts, jobOpts, looseP, looseShelves, looseErr, looseOk, openLoose, saveLoose, qcRows, qcd, openQc, qcShelves, saveQc, recent, reverse, rowsCount: computed(() => rows.value.length),
       };
@@ -296,7 +305,7 @@
                   <p-column header="จำนวนคืน" bodyClass="c-qty">
                     <template #body="{ data }">
                       <span class="m-lbl">จำนวนคืน</span>
-                      <p-inputnumber :key="data.key + ':' + rev" :modelValue="ent(data).qty" @input="setQty(data, $event.value)" :min="0" :minFractionDigits="0"
+                      <p-inputnumber :key="data.key + ':' + (revs[data.key] || 0)" :modelValue="ent(data).qty" @input="setQty(data, $event.value)" :min="0" :minFractionDigits="0"
                         :maxFractionDigits="2" :useGrouping="false" :placeholder="Domain.unitAbbr(data.p.unit)" :ariaLabel="'จำนวนที่คืน ' + data.p.name"
                         :invalid="!!errOf(data)" class="rt-qty" />
                       <small v-if="errOf(data)" class="rt-err" role="alert">{{ errOf(data) }}</small>
