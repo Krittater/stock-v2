@@ -1,7 +1,7 @@
 // ข้อมูลวัสดุ: แท็บรายการวัสดุ (?tab=items) + แท็บหมวดหมู่กำหนดเอง (?tab=categories)
 (function () {
   const { ref, reactive, computed, watch, onBeforeUnmount } = Vue;
-  const { state, act, route, go, services } = AppState;
+  const { state, user, act, route, go, services } = AppState;
 
   const ICONS = ['pi-bolt', 'pi-cog', 'pi-wrench', 'pi-box', 'pi-tag', 'pi-home', 'pi-lightbulb', 'pi-shield', 'pi-wifi', 'pi-server', 'pi-key', 'pi-link',
     'pi-filter', 'pi-th-large', 'pi-sun', 'pi-moon', 'pi-tablet', 'pi-mobile', 'pi-print', 'pi-truck', 'pi-briefcase', 'pi-flag', 'pi-cloud', 'pi-sliders-h'];
@@ -25,13 +25,27 @@
       watch(qInput, (v) => { clearTimeout(timer); timer = setTimeout(() => { text.value = v.trim(); }, 150); });
       onBeforeUnmount(() => clearTimeout(timer));
       const catFilter = ref(null);
+      const chip = ref(null); // null | 'nophoto' | 'approval' | 'inactive'
       const first = ref(0);
-      watch([text, catFilter], () => { first.value = 0; });
+      const isHead = computed(() => user.value.role === 'head');
+      const isEng = computed(() => user.value.role === 'engineer');
+      const canEdit = computed(() => !isEng.value);
+      watch([text, catFilter, chip], () => { first.value = 0; });
+      watch(isHead, (h) => { if (!h && chip.value === 'inactive') chip.value = null; });
+      const noPhoto = (p) => !(p.photos && p.photos.length);
+      const noPhotoCount = computed(() => state.products.filter((p) => p.active !== false && noPhoto(p)).length);
+      const toggleChip = (c) => { chip.value = chip.value === c ? null : c; };
+      const CHIPS = computed(() => [
+        { v: 'nophoto', label: `ยังไม่มีรูป (${noPhotoCount.value})` }, { v: 'approval', label: 'ต้องอนุมัติ' },
+        ...(isHead.value ? [{ v: 'inactive', label: 'เลิกใช้แล้ว' }] : []),
+      ]);
 
       const tops = computed(() => state.categories.filter((c) => !c.parentId).sort(byOrder));
       const subsOf = (id) => state.categories.filter((c) => c.parentId === id).sort(byOrder);
       const catGroups = computed(() => tops.value.map((p) => ({ label: p.name, items: [p, ...subsOf(p.id)] })));
-      const rows = computed(() => Domain.searchProducts(state, { text: text.value, categoryId: catFilter.value }).map((p) => ({
+      const rows = computed(() => Domain.searchProducts(state, { text: text.value, categoryId: catFilter.value, includeInactive: chip.value === 'inactive' && isHead.value })
+        .filter((p) => (chip.value === 'nophoto' ? noPhoto(p) : chip.value === 'approval' ? p.needsApproval : chip.value === 'inactive' ? p.active === false : true))
+        .map((p) => ({
         p, id: p.id, name: p.name, code: p.code, total: Domain.totalQty(state, p.id),
         wh: state.warehouses.map((w) => Domain.qtyOf(state, p.id, w.id)),
       })));
@@ -51,7 +65,15 @@
 
       const dlg = ref(false);
       const editing = ref(null);
-      const openCreate = () => { editing.value = null; dlg.value = true; };
+      const vendor = ref('');
+      const openCreate = (v = '') => { editing.value = null; vendor.value = typeof v === 'string' ? v : ''; dlg.value = true; };
+      const onMiss = (code) => services.confirm.require({
+        header: 'ไม่พบบาร์โค้ด', icon: 'pi pi-question-circle', message: `ไม่พบบาร์โค้ด ${code} สร้างสินค้าใหม่ไหม`,
+        rejectProps: { label: 'ไม่สร้าง', severity: 'secondary', outlined: true }, acceptProps: { label: 'สร้างสินค้าใหม่' },
+        accept: () => openCreate(code),
+      });
+      const reopen = (p) => act((s, u) => Domain.setProductActive(s, p.id, true, u), `เปิดใช้ ${p.name} อีกครั้งแล้ว`);
+      const setApproval = (c, v) => act((s, u) => Domain.updateCategory(s, c.id, { needsApproval: v }, u), (x) => `${x.needsApproval ? 'ตั้ง' : 'เอาออก'} "ต้องอนุมัติ" ที่หมวด "${x.name}" แล้ว`);
       const openEdit = (p) => { editing.value = p; dlg.value = true; };
       // ทางลัด "เพิ่มวัสดุ" (?new=1) — watch เพราะมาจากแท็บหมวดหมู่หน้าไม่เมานต์ใหม่; เปิดแล้วล้าง query กันเปิดซ้ำตอน reload
       watch(() => route.query.new, (v) => { if (v) { openCreate(); go('products', tab.value === 'categories' ? { tab: 'categories' } : {}); } }, { immediate: true });
@@ -126,7 +148,7 @@
       return {
         state, Domain, fmt, tab, setTab, qInput, text, catFilter, first, perPage, pageRows, sortBy, ariaSort, sortIcon, catGroups, rows, dlg, editing, openCreate, openEdit,
         tree, n, open, move, cd, openCat, saveCat, del, moveTargets, delSubs, askDelete, moveDelete,
-        tops, ICONS, COLORS, IMAGES,
+        tops, ICONS, COLORS, IMAGES, chip, CHIPS, toggleChip, isHead, isEng, canEdit, vendor, onMiss, reopen, setApproval,
       };
     },
     template: `<div class="products-page">
@@ -146,8 +168,11 @@
                 </p-iconfield>
                 <p-select v-model="catFilter" :options="catGroups" optionGroupLabel="label" optionGroupChildren="items" optionLabel="name" optionValue="id"
                   showClear filter placeholder="ทุกหมวดหมู่" aria-label="กรองตามหมวด" class="pp-cat" />
-                <scan-button :kinds="['product']" @found="({ id }) => { qInput = text = state.products.find((p) => p.id === id).code; }" />
-                <p-button label="เพิ่มวัสดุ" icon="pi pi-plus" @click="openCreate" />
+                <scan-button :kinds="['product']" close-on-miss @found="({ id }) => { qInput = text = state.products.find((p) => p.id === id).code; }" @notfound="onMiss" />
+                <p-button label="เพิ่มวัสดุ" icon="pi pi-plus" @click="openCreate()" />
+              </div>
+              <div class="pp-chips" role="group" aria-label="ตัวกรอง">
+                <button v-for="c in CHIPS" :key="c.v" type="button" class="pp-chip" :aria-pressed="chip === c.v" @click="toggleChip(c.v)">{{ c.label }}</button>
               </div>
               <!-- ตารางธรรมดา + p-paginator: DataTable ช้าเกิน 500ms ต่อหน้าที่ 100 แถว -->
               <div class="pp-table">
@@ -158,14 +183,14 @@
                         <button type="button" class="pp-sort" @click="sortBy('name')">วัสดุ <i :class="['pi', sortIcon('name')]" aria-hidden="true"></i></button></th>
                       <th :aria-sort="ariaSort('code')">
                         <button type="button" class="pp-sort" @click="sortBy('code')">รหัส <i :class="['pi', sortIcon('code')]" aria-hidden="true"></i></button></th>
-                      <th>หมวด</th><th>หน่วย</th><th class="pp-r">จุดสั่งซื้อ</th>
+                      <th>สถานะ</th><th>หมวด</th><th>หน่วย</th><th class="pp-r">จุดสั่งซื้อ</th>
                       <th class="pp-r" :aria-sort="ariaSort('total')">
                         <button type="button" class="pp-sort" @click="sortBy('total')">ยอดรวมทุกคลัง <i :class="['pi', sortIcon('total')]" aria-hidden="true"></i></button></th>
                       <th v-for="w in state.warehouses" :key="w.id" class="pp-r pp-wh">{{ w.name }}</th>
                       <th><span class="sr-only">แก้ไข</span></th>
                     </tr></thead>
                     <tbody>
-                      <tr v-for="r in pageRows" :key="r.id">
+                      <tr v-for="r in pageRows" :key="r.id" :class="{ 'row-inactive': r.p.active === false }">
                         <td class="pp-c-name">
                           <div class="prod-cell">
                             <product-thumb :product="r.p" :size="48" />
@@ -176,16 +201,22 @@
                           </div>
                         </td>
                         <td><span class="doc-id">{{ r.p.code }}</span></td>
+                        <td><span class="pp-tags">
+                          <span v-if="r.p.needsApproval" class="status-tag tone-yellow"><span class="dot" aria-hidden="true"></span>ต้องอนุมัติ</span>
+                          <span v-if="r.p.active === false" class="status-tag tone-gray"><span class="dot" aria-hidden="true"></span>เลิกใช้</span>
+                        </span></td>
                         <td>{{ Domain.categoryPath(state, r.p.categoryId) }}</td>
                         <td>{{ r.p.unit }}</td>
                         <td class="pp-r"><span class="num">{{ fmt(r.p.reorderPoint, r.p.unit) }}</span></td>
                         <td class="pp-r"><b class="num">{{ fmt(r.total, r.p.unit) }}</b></td>
                         <td v-for="(w, i) in state.warehouses" :key="w.id" class="pp-r pp-wh"><span class="num">{{ fmt(r.wh[i], r.p.unit) }}</span></td>
                         <td class="pp-act">
-                          <button type="button" class="icon-btn" :aria-label="'แก้ไข ' + r.p.name" @click="openEdit(r.p)"><i class="pi pi-pencil" aria-hidden="true"></i></button>
+                          <p-button v-if="isHead && r.p.active === false" label="เปิดใช้อีกครั้ง" severity="secondary" outlined @click="reopen(r.p)" />
+                          <button v-if="canEdit" type="button" class="icon-btn" :aria-label="'แก้ไข ' + r.p.name" @click="openEdit(r.p)"><i class="pi pi-pencil" aria-hidden="true"></i></button>
+                          <button v-else type="button" class="icon-btn" :aria-label="'ดู ' + r.p.name" @click="openEdit(r.p)"><i class="pi pi-eye" aria-hidden="true"></i></button>
                         </td>
                       </tr>
-                      <tr v-if="!rows.length"><td :colspan="7 + state.warehouses.length"><div class="table-empty"><p>ไม่พบวัสดุ{{ text ? ' "' + text + '"' : '' }}</p></div></td></tr>
+                      <tr v-if="!rows.length"><td :colspan="8 + state.warehouses.length"><div class="table-empty"><p>ไม่พบวัสดุ{{ text ? ' "' + text + '"' : '' }}</p></div></td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -208,6 +239,8 @@
                   <cat-thumb :category-id="r.c.id" :size="r.depth ? 40 : 48" :round="!r.depth" />
                   <div class="cat-name"><b>{{ r.c.name }}</b><span class="muted">{{ n(r.c.id).toLocaleString('en-US') }} รายการ<template v-if="r.subCount"> · {{ r.subCount }} หมวดย่อย</template></span></div>
                   <button v-if="!r.depth" type="button" class="add-sub" @click="openCat(null, r.c.id)"><i class="pi pi-plus" aria-hidden="true"></i> <span>หมวดย่อย</span></button>
+                  <label v-if="isHead" class="cat-appr"><p-toggleswitch :modelValue="!!r.c.needsApproval" :aria-label="'ต้องอนุมัติ ' + r.c.name" @update:modelValue="setApproval(r.c, $event)" /><span>ต้องอนุมัติ</span></label>
+                  <span v-else-if="r.c.needsApproval" class="status-tag tone-yellow"><span class="dot" aria-hidden="true"></span>ต้องอนุมัติ</span>
                   <div class="cat-acts">
                     <button type="button" class="icon-btn" :disabled="r.first" :aria-label="'เลื่อน ' + r.c.name + ' ขึ้น'" @click="move(r.c, -1)"><i class="pi pi-arrow-up" aria-hidden="true"></i></button>
                     <button type="button" class="icon-btn" :disabled="r.last" :aria-label="'เลื่อน ' + r.c.name + ' ลง'" @click="move(r.c, 1)"><i class="pi pi-arrow-down" aria-hidden="true"></i></button>
@@ -221,7 +254,7 @@
         </p-tabpanels>
       </p-tabs>
 
-      <product-dialog v-model:visible="dlg" :product="editing" />
+      <product-dialog v-model:visible="dlg" :product="editing" :initial-vendor="vendor" />
 
       <p-dialog v-model:visible="cd.open" :header="cd.id ? 'แก้ไขหมวดหมู่' : (cd.parentId ? 'เพิ่มหมวดย่อย' : 'เพิ่มหมวดหมู่')" modal dismissableMask :draggable="false" class="cat-dialog">
         <form @submit.prevent="cd.name.trim() && saveCat()">

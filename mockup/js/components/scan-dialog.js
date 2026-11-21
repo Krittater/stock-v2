@@ -5,8 +5,8 @@
   const NOUN = { req: 'ใบเบิก', roll: 'ม้วน', product: 'สินค้า', job: 'งาน' };
 
   window.ScanButton = {
-    props: { kinds: { type: Array, default: () => ['req', 'roll', 'product', 'job'] } },
-    emits: ['found'],
+    props: { kinds: { type: Array, default: () => ['req', 'roll', 'product', 'job'] }, closeOnMiss: Boolean }, // closeOnMiss: ไม่พบ = ปิดกล่องแล้วส่ง notfound(รหัส)
+    emits: ['found', 'notfound'],
     setup(props, { emit }) {
       const open = ref(false);
       const code = ref('');
@@ -26,9 +26,11 @@
         if (video.value) video.value.srcObject = null;
       };
 
-      const submit = (raw) => {
-        const r = Domain.parseScan(AppState.state, raw ?? code.value, props.kinds);
-        if (r && props.kinds.includes(r.kind)) { open.value = false; emit('found', r); return; }
+      const submit = (raw0) => {
+        const raw = String(raw0 ?? code.value).trim();
+        const r = Domain.parseScan(AppState.state, raw, props.kinds);
+        if (r && props.kinds.includes(r.kind)) { open.value = false; emit('found', { ...r, code: raw }); return; }
+        if (props.closeOnMiss && raw) { open.value = false; emit('notfound', raw); return; }
         error.value = 'ไม่พบ' + props.kinds.map((k) => NOUN[k]).join('/') + 'จากรหัสนี้';
       };
 

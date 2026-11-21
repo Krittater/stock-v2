@@ -458,7 +458,7 @@
         </div>
       </p-dialog>
 
-      <product-dialog v-model:visible="createOpen" :initial-name="text" created-note=" เลือกให้แล้ว" @created="onCreated" />
+      <product-dialog v-model:visible="createOpen" :initial-name="text" from-search created-note=" เลือกให้แล้ว" @created="onCreated" />
     </div>`,
   };
 })();

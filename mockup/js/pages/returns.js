@@ -10,18 +10,7 @@
   const toast = (severity, detail, life = 4000) => services.toast?.add({ severity, summary: severity === 'warn' ? 'ทำไม่ได้' : 'ผลลัพธ์', detail, life });
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // ย่อรูปให้ด้านยาวสุด 320px เป็น JPEG dataURL
-  async function shrink(file) {
-    const url = URL.createObjectURL(file);
-    try {
-      const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
-      const k = Math.min(1, 320 / Math.max(img.width, img.height));
-      const c = document.createElement('canvas');
-      c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      return c.toDataURL('image/jpeg', 0.7);
-    } finally { URL.revokeObjectURL(url); }
-  }
+  const shrink = (f) => window.UI.shrink(f);
 
   window.Pages.returns = {
     setup() {
