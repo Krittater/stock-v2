@@ -192,3 +192,12 @@ test('jobHistory รวมประวัติงาน+ใบเบิก+PR �
   const csv = D.jobUsageCsv(s, 'J-25-010');
   assert.ok(csv.includes(',"\'=น็อต\nสอง",ตัว,'));
 });
+
+test('CSV กัน formula เฉพาะ = + - @ · ชื่อขึ้นต้นด้วยตัวเลขไม่ถูกแก้', () => {
+  const s = mini();
+  iss(s, 5);
+  for (const [name, want] of [['3M tape', '3M tape'], ['12V battery', '12V battery'], ['@x', "'@x"], ['-x', "'-x"], ['+x', "'+x"]]) {
+    s.products[0].name = name;
+    assert.ok(D.jobUsageCsv(s, 'J-25-010').includes(',' + want + ',ตัว,'), name);
+  }
+});

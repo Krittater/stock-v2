@@ -160,7 +160,7 @@
   // CSV ยอดใช้ของงาน: BOM + CRLF ให้ Excel อ่านไทยถูก
   function jobUsageCsv(state, jobId) {
     const job = jobOf(state, jobId);
-    const q = (v) => { let t = String(v ?? ''); if (typeof v === 'string' && /^[=+-@]/.test(t)) t = "'" + t; return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const q = (v) => { let t = String(v ?? ''); if (typeof v === 'string' && /^[=+\-@]/.test(t)) t = "'" + t; return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
     const rows = [['รหัสงาน', job.id], ['ชื่องาน', job.name], [], ['รหัสสินค้า', 'สินค้า', 'หน่วย', 'เบิก', 'คืน', 'ใช้จริง']];
     for (const u of D.jobUsage(state, jobId)) {
       const p = state.products.find((x) => x.id === u.productId) || {};
