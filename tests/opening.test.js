@@ -264,3 +264,11 @@ test('fix9 confirm re-validates: counting warehouse refuses and keeps the cc pen
   assert.throws(() => D.confirmOpening(b.s, r.opening.cc.id, b.store, true), { code: 'wh_counting' });
   assert.equal(r.opening.cc.stage, 'store'); assert.equal(D.qtyOf(b.s, r.product.id, W), 0);
 });
+
+test('postIssue: ยอดรอยืนยัน 10 กับสองบรรทัดสินค้าเดียวกัน [10,10] → covered รวม 10 + PR 10', () => {
+  const b = base(); const p = mk(b).product;
+  D.submitOpening(b.s, { productId: p.id, whId: W, qty: 10, kind: 'found' }, b.eng);
+  const r = D.issue(b.s, { whId: W, jobId: JOB, lines: [{ productId: p.id, qty: 10 }, { productId: p.id, qty: 10 }] }, b.head);
+  assert.deepEqual(r.doc.lines.map((l) => l.covered), [10, 0]);
+  assert.equal(r.prs.length, 1); assert.equal(r.prs[0].qty, 10);
+});

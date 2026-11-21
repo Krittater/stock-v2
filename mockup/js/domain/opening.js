@@ -61,8 +61,8 @@
     return dropped;
   }
   // postIssue ใช้: ส่วนขาดที่ยอดรอยังไม่ถูกใบอื่นนับครอบคลุม
-  function coverable(state, productId, whId, need) {
-    let used = 0;
+  function coverable(state, productId, whId, need, used = 0) { // used = ส่วนที่บรรทัดก่อนหน้าของใบเดียวกันนับไปแล้ว
+    used = +used;
     for (const d of openDocs(state, whId)) for (const l of d.lines) if (l.productId === productId) used += l.covered || 0;
     return r2(Math.max(0, Math.min(need, pendingOpening(state, productId, whId) - used)));
   }

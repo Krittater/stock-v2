@@ -254,3 +254,21 @@ test('ชำรุดในคลังที่ไม่มีชั้นร�
   assert.throws(() => rc(s, [{ productId: 'P-0001', qty: 1, condition: 'damaged' }]), { code: 'shelf_missing' });
   assert.equal(snap(s), before);
 });
+
+// ---- fix round 2 ----
+test('ปฏิเสธใบรับที่อ้าง PR → ปล่อย PR ที่ถูกกันไว้ (ใบเบิก ready)', () => {
+  const s = mini(); const a = D.issue(s, { whId: W, jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 10 }] }, engA);
+  const pend = rc(s, [{ productId: 'P-0001', qty: 10, prId: a.prs[0].id }], engB);
+  rc(s, [{ productId: 'P-0001', qty: 10 }]);
+  assert.equal(a.doc.fill, 'ready'); assert.equal(a.prs[0].status, 'open');
+  D.confirmReceipt(s, pend.id, store, false);
+  assert.equal(a.prs[0].status, 'cancelled'); assert.equal(openRemainder(s, 'P-0001'), 0);
+});
+test('ปฏิเสธใบรับที่อ้าง PR → ปล่อย PR แม้ใบเบิกจ่ายแล้ว (full)', () => {
+  const s = mini(); const a = D.issue(s, { whId: W, jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 10 }] }, engA);
+  const pend = rc(s, [{ productId: 'P-0001', qty: 10, prId: a.prs[0].id }], engB);
+  rc(s, [{ productId: 'P-0001', qty: 10 }]);
+  D.pickReserved(s, a.doc.id, store); assert.equal(a.doc.fill, 'full');
+  D.confirmReceipt(s, pend.id, store, false);
+  assert.equal(a.prs[0].status, 'cancelled'); assert.equal(openRemainder(s, 'P-0001'), 0);
+});

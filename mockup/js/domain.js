@@ -320,7 +320,7 @@
       l.waiting = +(l.qty - l.issued).toFixed(2); l.reserved = 0; l.covered = 0;
       if (l.issued < l.qty) {
         short++;
-        l.covered = Domain.coverable(state, l.productId, doc.whId, l.waiting); // ส่วนที่ยอดตั้งต้นที่รอยืนยันครอบคลุม ไม่เปิดรายการต้องซื้อ (IF20/IF25)
+        l.covered = Domain.coverable(state, l.productId, doc.whId, l.waiting, doc.lines.filter((x) => x !== l && x.productId === l.productId).reduce((a, x) => a + (x.covered || 0), 0)); // ส่วนที่ยอดตั้งต้นที่รอยืนยันครอบคลุม ไม่เปิดรายการต้องซื้อ (IF20/IF25)
         const need = +(l.waiting - l.covered).toFixed(2);
         if (need > 0) {
           const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: doc.whId, qty: need, received: 0, status: 'open', reqId: doc.id };

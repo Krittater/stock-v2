@@ -139,7 +139,10 @@
     if (accept && trim(overReason)) doc.overReason = trim(overReason); // รับเกินที่เจอตอนยืนยัน ใส่เหตุผลตอนนี้ได้
     if (accept) post(state, doc, check(state, doc), actor); // ตรวจซ้ำตามยอดตอนนี้ (ชั้น/คลัง/ค้างรับอาจเปลี่ยนระหว่างรอ)
     doc.status = accept ? 'posted' : 'rejected';
-    if (!accept) log(state, actor, 'receive.reject', doc.id, 'ไม่รับใบรับ');
+    if (!accept) {
+      log(state, actor, 'receive.reject', doc.id, 'ไม่รับใบรับ');
+      for (const pid of new Set(doc.lines.map((l) => l.productId))) D.syncPRs(state, pid, doc.whId); // ปล่อย PR ที่ถูกกันไว้เพราะใบรับนี้อ้างอยู่
+    }
     return doc;
   }
 

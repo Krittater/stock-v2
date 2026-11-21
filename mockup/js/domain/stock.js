@@ -143,7 +143,7 @@
   function syncPRs(state, productId, whId) {
     const p = productOf(state, productId);
     const held = new Set(state.docs.filter((d) => d.type === 'receive' && d.status === 'pending').flatMap((d) => d.lines.map((l) => l.prId)));
-    const docs = state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && ['partial', 'waiting', 'ready'].includes(d.fill));
+    const docs = state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && ['partial', 'waiting', 'ready', 'full'].includes(d.fill));
     for (const d of docs) {
       const lines = d.lines.filter((l) => l.productId === productId);
       if (!lines.length) continue;
