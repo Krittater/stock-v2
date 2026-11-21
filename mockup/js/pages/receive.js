@@ -163,7 +163,9 @@
       // ---------- รอยืนยันยอด ----------
       const pend = computed(() => {
         if (!isEng.value) { const a = Domain.approvalItems(state, user.value); return { receipts: a.receipts.slice().reverse(), ccs: a.ccs.slice().reverse() }; }
-        return { receipts: state.docs.filter((d) => d.type === 'receive' && d.status === 'pending').reverse(), ccs: (state.ccs || []).filter((c) => c.stage === 'store' || c.stage === 'head').reverse() };
+        // วิศวกรเห็นเฉพาะที่ตัวเองส่ง (ดูสถานะอย่างเดียว) ไม่เห็นของคนอื่น
+        const mine = (x) => x.by === user.value.id;
+        return { receipts: state.docs.filter((d) => d.type === 'receive' && d.status === 'pending' && mine(d)).reverse(), ccs: (state.ccs || []).filter((c) => (c.stage === 'store' || c.stage === 'head') && mine(c)).reverse() };
       });
       const pendCount = computed(() => pend.value.receipts.length + pend.value.ccs.length);
 

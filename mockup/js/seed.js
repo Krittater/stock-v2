@@ -247,7 +247,7 @@
     }
     for (let i = 0; i < PENDING; i++) {
       docs.push({ id: 'REQ-69' + pad(POSTED_ISSUE + i + 1, 4), type: 'issue', status: 'pending', whId: 'W-BN',
-        jobId: openJobs[(i + 1) % openJobs.length].id, lines: mkLines(i + 5), note: '', by: 'U-ENG', at: iso(i % 3, 8 + i) });
+        jobId: openJobs[(i + 1) % openJobs.length].id, lines: mkLines(i + 5), note: '', by: 'U-ENG', at: iso(i % 3, 8 + i), prIds: [] });
     }
 
     const prs = PR_POOL.map((num, k) => {

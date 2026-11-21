@@ -112,7 +112,7 @@
       });
       const closeRound = () => {
         const sm = summary.value;
-        const heldN = user.value.role === 'head' ? 0 : current.value.lines.filter((l) => l.counted !== null && l.counted !== l.system && state.products.find((p) => p.id === l.productId).needsApproval).length;
+        const heldN = user.value.role === 'head' ? 0 : current.value.lines.filter((l) => Domain.isCountDiff(l) && Domain.countLineHeld(state, user.value, l)).length;
         services.confirm.require({
           header: 'ปิดรอบนับ ' + current.value.id,
           message: 'จะปรับยอด ' + sm.diffLines + ' รายการให้เท่ากับที่นับ' + (heldN ? ' (ในนี้ ' + heldN + ' รายการเป็นสินค้าต้องอนุมัติ รอหัวหน้ายืนยัน ยอดยังไม่เปลี่ยน)' : '') + ' และปลดล็อกคลัง · บรรทัดที่ยังไม่นับ (' + (sm.total - sm.counted).toLocaleString('en-US') + ' รายการ) จะไม่ถูกปรับ',

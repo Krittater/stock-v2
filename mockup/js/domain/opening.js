@@ -15,7 +15,7 @@
     if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
     return p;
   };
-  const ccQty = (c) => (c.rollLengths ? r2(c.rollLengths.reduce((a, b) => a + b, 0)) : c.qty);
+  const ccQty = (c) => (c.kind === 'count' ? c.diff : c.rollLengths ? r2(c.rollLengths.reduce((a, b) => a + b, 0)) : c.qty);
   const live = (c) => c.stage === 'store' || c.stage === 'head';
 
   // ยอดที่รอยืนยัน (ไม่นับรายการปรับยอดนับ)
@@ -36,8 +36,7 @@
     return { p, shelf, amount: ins.amount, rollLengths: lengths, apply: ins.apply };
   }
 
-  const OPEN_FILL = ['partial', 'waiting', 'ready'];
-  const openDocs = (state, whId) => state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && OPEN_FILL.includes(d.fill));
+  const openDocs = (state, whId) => state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && D.isOpenFill(d.fill));
 
   // ลงยอดจริง + ปรับยอดรอ + กันของให้ใบเบิกที่รอ (ผ่านการตรวจแล้ว)
   function land(state, apply, productId, whId) {
@@ -106,7 +105,7 @@
     return () => {
       if (cc.diff > 0) D.putStock(state, { productId: cc.productId, whId: cc.whId, qty: cc.diff, rollLengths: productOf(state, cc.productId).isRoll ? [cc.diff] : undefined, batch: 'จากการนับ' });
       else D.stockOut(state, { productId: cc.productId, whId: cc.whId, qty: -cc.diff });
-      if (cc.diff > 0) D.reserveForWaiting(state, cc.productId, cc.whId);
+      if (cc.diff > 0) D.reserveForWaiting(state, cc.productId, cc.whId); else D.releaseExcess(state, cc.productId, cc.whId);
     };
   }
 
@@ -239,6 +238,15 @@
     return state.settings.openingLocked;
   }
 
+  // เปิด/ปิด "ใบเบิกต้องให้หัวหน้าอนุมัติ" (หัวหน้าเท่านั้น) ลงประวัติเมื่อค่าเปลี่ยน
+  function setRequireApproval(state, on, actor) {
+    if (!isHead(actor)) throw forbidden();
+    if (!!state.settings.requireApproval === !!on) return !!on;
+    state.settings.requireApproval = !!on;
+    log(state, actor, 'setting.approval', 'settings', on ? 'เปิด: ใบเบิกต้องให้หัวหน้าอนุมัติ' : 'ปิด: ใบเบิกไม่ต้องให้หัวหน้าอนุมัติ');
+    return !!on;
+  }
+
   // ข้อความบอกล่วงหน้า (OS-G5): หัวหน้าเข้าทันทีเสมอ · Store เข้าทันทียกเว้นสินค้าต้องอนุมัติ · คนอื่นรอ Store
   const openingLead = (role, needsApproval) => (role === 'head' ? 'ยอดเข้าคลังทันที'
     : role === 'store' ? (needsApproval ? 'หัวหน้าจะอนุมัติยอดก่อนเข้าคลัง' : 'ยอดเข้าคลังทันที') : 'Store จะตรวจยืนยันยอดก่อนเข้าคลัง');
@@ -252,6 +260,6 @@
     return m;
   }
 
-  Object.assign(D, { openingLead, openingProblems, submitOpening, confirmOpening, approvalItems, pendingOpening, coverable, queueCountDiff, parseOpeningCsv, importOpening, setOpeningLock });
+  Object.assign(D, { openingLead, openingProblems, submitOpening, confirmOpening, approvalItems, pendingOpening, ccQty, coverable, queueCountDiff, parseOpeningCsv, importOpening, setOpeningLock, setRequireApproval });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

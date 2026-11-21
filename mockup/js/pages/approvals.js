@@ -75,7 +75,7 @@
           </header>
           <p v-if="c.counting" class="appr-warn"><i class="pi pi-exclamation-triangle" aria-hidden="true"></i> คลังนี้กำลังตรวจนับ อนุมัติไม่ได้จนกว่าตรวจนับเสร็จ</p>
           <ul class="appr-lines">
-            <li v-for="x in c.lines" :key="x.l.productId">
+            <li v-for="(x, i) in c.lines" :key="i">
               <product-thumb :product="x.p" :size="44" />
               <span class="appr-name">{{ x.p ? x.p.name : x.l.productId }}</span>
               <span class="appr-qty">ขอเบิก <qty :n="x.l.qty" :unit="x.p && x.p.unit" /></span>

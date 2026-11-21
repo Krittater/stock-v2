@@ -86,10 +86,10 @@
       const rowWh = reactive({}); // คลังที่ดูต่อแถว (ไม่ persist) — ไม่ได้เลือก = คลังของใบเบิก
       const whOf = (p) => rowWh[p.id] || cart.value.whId;
       const rowQty = (p) => Domain.available(state, p.id, whOf(p));
-      const rowStatus = (p) => (state.warehouses.find((w) => w.id === whOf(p))?.countId ? 'counting' : Domain.stockStatus(state, p, whOf(p)));
+      const rowStatus = (p) => (state.warehouses.find((w) => w.id === whOf(p))?.countId ? 'counting' : Domain.stockStatus(state, p, whOf(p), { byAvailable: true }));
       const setRowWh = (p, id) => { rowWh[p.id] = id === cart.value.whId ? undefined : id; };
       const whOptions = (p) => state.warehouses.map((w) => ({ id: w.id, label: `${w.name} · ${fmt(Domain.available(state, p.id, w.id), p.unit)}${Domain.pendingOpening(state, p.id, w.id) > 0 ? ` · รอยืนยัน ${fmt(Domain.pendingOpening(state, p.id, w.id), p.unit)}` : ''}` }));
-      const cartStatus = (p) => Domain.stockStatus(state, p, cart.value.whId);
+      const cartStatus = (p) => Domain.stockStatus(state, p, cart.value.whId, { byAvailable: true });
 
       const flashId = ref(null);
       let flashTimer;
@@ -157,6 +157,7 @@
         const b = [];
         if (!cart.value.lines.length) b.push('เพิ่มของอย่างน้อย 1 รายการ');
         else if (cart.value.lines.some((l) => !(l.qty > 0))) b.push('ใส่จำนวนให้ครบทุกรายการ');
+        for (const r of cartRows.value) if (r.p.active === false) b.push(r.p.name + ' เลิกใช้แล้ว เอาออกจากรายการก่อน');
         if (!cart.value.whId) b.push('เลือกคลังที่เบิกของ');
         else if (state.warehouses.find((w) => w.id === cart.value.whId)?.countId) b.push('คลังนี้กำลังตรวจนับ เลือกคลังอื่น');
         if (!jobLabel(cart.value.jobId)) b.push('เลือกงาน / โครงการ');
@@ -311,7 +312,8 @@
             <product-thumb :product="r.p" :size="48" />
             <div class="cart-line-body">
               <div class="cart-line-name">{{ r.p.name }}</div>
-              <div v-if="r.short" class="cart-short"><i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+              <div v-if="r.p.active === false" class="cart-short"><i class="pi pi-ban" aria-hidden="true"></i> เลิกใช้แล้ว เบิกไม่ได้ เอาออกจากรายการ</div>
+              <div v-else-if="r.short" class="cart-short"><i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
                 มีในคลังนี้ {{ fmt(r.have, r.p.unit) }} · ขาด {{ fmt(r.short, r.p.unit) }}</div>
               <div class="cart-line-row">
                 <span class="muted">{{ Domain.unitAbbr(r.p.unit) }}</span>

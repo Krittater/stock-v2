@@ -34,15 +34,7 @@
       // ---------- ใบเบิกที่คืนได้ ----------
       const docsAll = computed(() => Domain.returnable(state, user.value));
       // กรองจาก docsAll (ไม่เรียก returnable ซ้ำ) ด้วยกติกาเดียวกับ Domain.returnable: เลขใบ ชื่องาน ชื่อ/ยี่ห้อ/รุ่นสินค้า
-      const docsShown = computed(() => {
-        const n = text.value.trim().toLowerCase();
-        if (!n) return docsAll.value;
-        return docsAll.value.filter((x) => {
-          const job = state.jobs.find((j) => j.id === x.doc.jobId);
-          return [x.doc.id, job && job.name, ...x.lines.map((l) => { const p = byId.value.get(l.productId); return p ? [p.name, p.brand, p.model].join(' ') : ''; })]
-            .some((h) => (h || '').toLowerCase().includes(n));
-        });
-      });
+      const docsShown = computed(() => docsAll.value.filter((x) => Domain.returnMatches(state, x, text.value)));
       const flat = (docs) => docs.flatMap((x) => x.lines.map((line) => ({
         key: x.doc.id + '|' + line.productId, doc: x.doc, by: x.by, line, p: byId.value.get(line.productId),
       }))).filter((r) => r.p);
@@ -84,7 +76,7 @@
       const rowErr = (r, e) => {
         const q = Number(e.qty), unit = r.p.unit, left = r.line.left;
         try { Domain.validateQty(q, unit); } catch (x) {
-          if (!(unit !== 'เมตร' && !Number.isInteger(left) && q === left)) return x.message; // ข้อมูลเก่าที่ค้างทศนิยม คืนทั้งหมดได้
+          if (!Domain.isLegacyReturn(unit, left, q)) return x.message; // ข้อมูลเก่าที่ค้างทศนิยม คืนทั้งหมดได้
         }
         return q > left + 1e-9 ? `คืนได้ไม่เกิน ${fmt(left, unit)}` : '';
       };

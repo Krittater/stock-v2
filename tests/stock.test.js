@@ -190,5 +190,5 @@ test('ทุกการเปลี่ยนข้อมูลลง audit', ()
   s.settings.requireApproval = true;
   const r = D.issue(s, { whId: 'W-BN', jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 1 }] }, { id: 'U-3', role: 'engineer' });
   D.approveIssue(s, r.doc.id, h, false);
-  assert.deepEqual(s.audit.map((a) => a.action), ['count.start', 'count.cancel', 'category.add', 'category.update', 'category.delete', 'job.add', 'receive.submit', 'receive.reject', 'issue.reject']);
+  assert.deepEqual(s.audit.map((a) => a.action), ['count.start', 'count.cancel', 'category.add', 'category.update', 'category.delete', 'job.add', 'receive.submit', 'receive.reject', 'issue.submit', 'issue.reject']);
 });

@@ -1,7 +1,7 @@
 // โครงแอป: sidebar, topbar, router outlet, ธีม — mount ท้ายไฟล์
 (function () {
   const { computed, ref, watch, watchEffect, onMounted, onBeforeUnmount } = Vue;
-  const { state, user, route, go, setRole, reset, resetCount } = AppState;
+  const { state, user, route, go, setRole, reset, resetCount, act } = AppState;
 
   const NAV = [
     { name: 'home', label: 'หน้าแรก', icon: 'pi-home' },
@@ -48,7 +48,7 @@
       const settingsItems = computed(() => SETTINGS.filter((i) => !i.head || user.value.role === 'head'));
       const badgeN = computed(() => { const a = Domain.approvalItems(state, user.value); return a.issues.length + a.receipts.length + a.ccs.length; });
       return {
-        navItems, settingsItems, badgeN, NAV, SETTINGS, ROLES, state, user, pop, isActive, setRole, reset,
+        setApproval: (on) => act((s, u) => Domain.setRequireApproval(s, on, u)), navItems, settingsItems, badgeN, NAV, SETTINGS, ROLES, state, user, pop, isActive, setRole, reset,
         openCredits: () => { pop.value.hide(); creditsOpen.value = true; },
         open: (i) => go(i.name, i.tab ? { tab: i.tab } : undefined),
         nameOf: (role) => state.users.find((u) => u.role === role)?.name,
@@ -89,7 +89,7 @@
           </div>
           <label class="switch-row">
             <span>ใบเบิกต้องให้หัวหน้าอนุมัติ<small v-if="user.role !== 'head'">เฉพาะหัวหน้าแก้ได้</small></span>
-            <p-toggleswitch v-model="state.settings.requireApproval" :disabled="user.role !== 'head'" />
+            <p-toggleswitch :model-value="state.settings.requireApproval" :disabled="user.role !== 'head'" @update:model-value="setApproval" />
           </label>
           <label class="switch-row">
             <span>โหมดมืด</span>

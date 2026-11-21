@@ -67,11 +67,12 @@
     return +t.toFixed(2);
   };
   // ยอดที่เบิกได้ = ยอดจริง − ของที่กันไว้ให้ใบเบิกที่รอ
-  const RESERVING = new Set(['partial', 'waiting', 'ready']);
+  const OPEN_FILL = ['partial', 'waiting', 'ready']; // ใบเบิกที่ยังจ่ายไม่ครบ (ถือของที่กันไว้ได้)
+  const isOpenFill = (fill) => OPEN_FILL.includes(fill);
   const reservedAt = (state, productId, whId) => {
     let t = 0;
     for (const d of state.docs) {
-      if (d.type !== 'issue' || d.status !== 'posted' || d.whId !== whId || !RESERVING.has(d.fill)) continue;
+      if (d.type !== 'issue' || d.status !== 'posted' || d.whId !== whId || !isOpenFill(d.fill)) continue;
       for (const l of d.lines) if (l.productId === productId) t += l.reserved || 0;
     }
     return +t.toFixed(2);
@@ -80,8 +81,9 @@
   const totalQty = (state, productId) =>
     state.warehouses.reduce((sum, w) => sum + qtyOf(state, productId, w.id), 0);
 
-  function stockStatus(state, product, whId) {
-    const q = whId ? qtyOf(state, product.id, whId) : totalQty(state, product.id);
+  // byAvailable: ดูยอดที่เบิกได้ (หักของที่กันไว้) แทนยอดจริง — ใช้ที่หน้าเบิก; KPI ใช้ยอดจริงตามเดิม
+  function stockStatus(state, product, whId, { byAvailable = false } = {}) {
+    const q = whId ? (byAvailable ? available(state, product.id, whId) : qtyOf(state, product.id, whId)) : totalQty(state, product.id);
     if (q <= 0) return 'out';
     return q <= product.reorderPoint ? 'low' : 'in';
   }
@@ -111,7 +113,8 @@
       const s = JSON.parse(raw);
       // ต้องมีผู้ใช้ปัจจุบันและชุดข้อมูลหลักครบ ไม่งั้นหน้าจอพัง (user undefined) → ใช้ seed ใหม่แทน
       const ok = s && s.version === 3 && Array.isArray(s.users) && s.users.some((u) => u.id === s.currentUserId)
-        && ['docs', 'products', 'warehouses', 'audit'].every((k) => Array.isArray(s[k]));
+        && ['docs', 'products', 'warehouses', 'audit', 'rolls', 'prs', 'jobs'].every((k) => Array.isArray(s[k]))
+        && ['settings', 'stock', 'counters'].every((k) => s[k] && typeof s[k] === 'object' && !Array.isArray(s[k]));
       return ok ? s : null;
     } catch (e) {
       return null;
@@ -315,10 +318,25 @@
 
   // ตัดยอดตามที่มีจริง ส่วนขาดเปิด PR; ตรวจครบแล้วก่อนเรียก จึงไม่ throw กลางทาง
   function postIssue(state, doc, actor) {
+    doc.prIds = doc.prIds || [];
+    // วางแผนและตรวจทุกบรรทัดก่อนแตะยอด (เรียก stockOut ต่อสินค้าเดียวกันลดยอดที่เบิกได้ทีละบรรทัด) จะได้ไม่ค้างครึ่งทาง
+    const left = {};
+    const plan = doc.lines.map((l) => {
+      const p = state.products.find((x) => x.id === l.productId);
+      if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
+      if (p.active === false) throw new DomainError('prod_inactive', `${p.name} เลิกใช้แล้ว เบิกไม่ได้`);
+      const a = l.productId in left ? left[l.productId] : available(state, l.productId, doc.whId);
+      let n = Math.min(l.qty, a);
+      if (p.unit !== 'เมตร') n = Math.floor(n + 1e-9); // ยอดค้างทศนิยมของข้อมูลเก่า จ่ายได้เฉพาะจำนวนเต็ม
+      n = +n.toFixed(2);
+      if (n > 0) validateQty(n, p.unit);
+      left[l.productId] = +(a - n).toFixed(2);
+      return n;
+    });
     const prs = [];
     let short = 0, got = 0;
-    for (const l of doc.lines) {
-      l.issued = Math.min(l.qty, available(state, l.productId, doc.whId));
+    for (const [i, l] of doc.lines.entries()) {
+      l.issued = plan[i];
       if (l.issued > 0) { const o = Domain.stockOut(state, { productId: l.productId, whId: doc.whId, qty: l.issued }); l.cuts = o.cuts; l.shelves = o.shelves; got++; }
       l.waiting = +(l.qty - l.issued).toFixed(2); l.reserved = 0; l.covered = 0;
       if (l.issued < l.qty) {
@@ -348,6 +366,7 @@
     for (const l of lines) {
       const p = state.products.find((x) => x.id === l.productId);
       if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
+      if (p.active === false) throw new DomainError('prod_inactive', `${p.name} เลิกใช้แล้ว เบิกไม่ได้ เอาออกจากรายการก่อน`);
       validateQty(l.qty, p.unit);
     }
     const pending = needsApproval(state, actor);
@@ -357,7 +376,8 @@
       at: new Date().toISOString(), prIds: [],
     };
     state.docs.push(doc);
-    return pending ? { doc, outcome: 'pending', prs: [] } : postIssue(state, doc, actor);
+    if (pending) { Domain.log(state, actor, 'issue.submit', doc.id, 'ส่งใบเบิก ' + doc.lines.length + ' รายการ รอหัวหน้าอนุมัติ'); return { doc, outcome: 'pending', prs: [] }; }
+    return postIssue(state, doc, actor);
   }
 
   function approveIssue(state, docId, actor, approve) {
@@ -416,12 +436,16 @@
     };
   }
 
+  // บรรทัดนับที่ต้องรอหัวหน้า: สินค้าต้องอนุมัติ และผู้ปิดรอบไม่ใช่หัวหน้า (PD-AC8)
+  const countLineHeld = (state, actor, l) => actor.role !== 'head' && !!state.products.find((p) => p.id === l.productId).needsApproval;
+  const isCountDiff = (l) => l.counted !== null && diffOf(l) !== 0;
+
   function closeCount(state, countId, actor) {
     if (actor.role === 'engineer') throw new DomainError('forbidden', 'เฉพาะ Store หรือหัวหน้าปิดรอบนับได้');
     const count = openCount(state, countId);
-    const all = count.lines.filter((l) => l.counted !== null && diffOf(l) !== 0);
+    const all = count.lines.filter(isCountDiff);
     // สินค้าต้องอนุมัติ: ถ้าผู้ปิดรอบไม่ใช่หัวหน้า ส่วนต่างรอหัวหน้า ไม่ปรับยอดตรงนี้ (PD-AC8)
-    const held = (l) => actor.role !== 'head' && state.products.find((p) => p.id === l.productId).needsApproval;
+    const held = (l) => countLineHeld(state, actor, l);
     const changed = all.filter((l) => !held(l));
     let adjust = null;
     // ตรวจส่วนต่างติดลบทุกบรรทัดก่อนแตะยอด จะได้ไม่ค้างครึ่งทาง
@@ -434,7 +458,7 @@
         if (d > 0) {
           const roll = state.products.find((p) => p.id === l.productId).isRoll;
           Domain.putStock(state, { productId: l.productId, whId: count.whId, qty: d, rollLengths: roll ? [d] : undefined, batch: 'จากการนับ' });
-        } else Domain.stockOut(state, { productId: l.productId, whId: count.whId, qty: -d });
+        } else { Domain.stockOut(state, { productId: l.productId, whId: count.whId, qty: -d }); Domain.releaseExcess(state, l.productId, count.whId); }
       }
       adjust = {
         id: nextId(state, 'ADJ'), type: 'adjust', status: 'posted', whId: count.whId,
@@ -463,10 +487,10 @@
   const Domain = {
     DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyAt, qtyOf, available, totalQty,
     shelves, plainShelves, qcCodes, qcShelf, similarity, touchRolls,
-    stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
+    stockStatus, reservedAt, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, catOf, norm, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
     addCategory, updateCategory, deleteCategory, productCounts, findSimilar,
-    openPRs, needsApproval, issue, approveIssue,
+    openPRs, needsApproval, issue, approveIssue, OPEN_FILL, isOpenFill, countLineHeld, isCountDiff,
     startCount, setCounted, countSummary, closeCount, cancelCount,
   };
   root.Domain = Domain;

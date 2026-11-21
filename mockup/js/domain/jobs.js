@@ -10,7 +10,6 @@
     return j;
   };
   const nameOf = (state, actor) => (state.users.find((u) => u.id === (actor && actor.id)) || actor || {}).name || '';
-  const OPEN_FILL = ['partial', 'waiting', 'ready'];
 
   // รหัส J-{YY}-{NNN}: ค.ศ. 2 หลัก รันต่อปี (id เก่าที่ไม่เข้ารูปแบบข้ามไป)
   function nextJobId(state) {
@@ -62,12 +61,16 @@
   }
 
   const jobDocs = (state, jobId) => state.docs.filter((d) => d.type === 'issue' && d.jobId === jobId);
-  const openDocsOf = (state, jobId) => jobDocs(state, jobId).filter((d) => d.status === 'pending' || OPEN_FILL.includes(d.fill));
+  const openDocsOf = (state, jobId) => jobDocs(state, jobId).filter((d) => d.status === 'pending' || D.isOpenFill(d.fill));
 
+  // PR ที่ยกเลิกได้ = เปิดอยู่ ยังไม่ได้รับของ และไม่ถูกใบรับที่รอยืนยันอ้างอยู่ (ไม่งั้น Store ยืนยันทีหลังจะติด pr_closed)
+  const heldPRIds = (state) => new Set(state.docs.filter((d) => d.type === 'receive' && d.status === 'pending').flatMap((d) => d.lines.map((l) => l.prId)));
+  const prsOfDocs = (state, docs) => { const ids = new Set(docs.map((d) => d.id)); return state.prs.filter((r) => r.status === 'open' && ids.has(r.reqId) && !(r.received > 0)); };
   function openPRsOf(state, docs) {
-    const ids = new Set(docs.map((d) => d.id));
-    return state.prs.filter((r) => r.status === 'open' && ids.has(r.reqId) && !(r.received > 0));
+    const held = heldPRIds(state);
+    return prsOfDocs(state, docs).filter((r) => !held.has(r.id));
   }
+  const heldPRsOf = (state, docs) => { const held = heldPRIds(state); return prsOfDocs(state, docs).filter((r) => held.has(r.id)); };
 
   function closeJobCheck(state, jobId) {
     const docs = jobDocs(state, jobId);
@@ -76,7 +79,7 @@
       const left = r2((l.issued || 0) - (l.returned || 0));
       if (left > 0) unreturned.push({ productId: l.productId, docId: d.id, left });
     }
-    return { openDocs: openDocsOf(state, jobId), unreturned, openPRs: openPRsOf(state, docs) };
+    return { openDocs: openDocsOf(state, jobId), unreturned, openPRs: openPRsOf(state, docs), heldPRs: heldPRsOf(state, docs) };
   }
 
   function cancelPRs(state, docs, actor) {
@@ -115,6 +118,9 @@
     return job;
   }
 
+  // ปิดได้ = ใบที่จ่ายแล้วแต่ยังไม่ครบ · ยกเลิกได้ = ใบรออนุมัติ หรือใบที่ยังไม่เคยจ่ายของ (UI ใช้ชุดเดียวกัน)
+  const canCloseIssue = (d) => d.status === 'posted' && D.isOpenFill(d.fill);
+  const canCancelIssue = (d) => d.status === 'pending' || (canCloseIssue(d) && !d.lines.some((l) => (l.issued || 0) > 0));
   const docOf = (state, id) => {
     const d = state.docs.find((x) => x.id === id && x.type === 'issue');
     if (!d) throw new DomainError('doc_missing', 'ไม่พบใบเบิกนี้');
@@ -128,7 +134,7 @@
 
   function closeIssue(state, docId, actor, { cancelPRs: cancel = true } = {}) {
     const doc = docOf(state, docId);
-    if (doc.status !== 'posted' || !OPEN_FILL.includes(doc.fill)) throw new DomainError('doc_not_open', 'ปิดได้เฉพาะใบเบิกที่ยังจ่ายไม่ครบ');
+    if (!canCloseIssue(doc)) throw new DomainError('doc_not_open', 'ปิดได้เฉพาะใบเบิกที่ยังจ่ายไม่ครบ');
     const prs = cancel ? cancelPRs(state, [doc], actor) : [];
     doc.fill = 'closed';
     release(state, doc);
@@ -138,8 +144,7 @@
 
   function cancelIssue(state, docId, actor, { cancelPRs: cancel = true } = {}) {
     const doc = docOf(state, docId);
-    const ok = doc.status === 'pending' || (doc.status === 'posted' && OPEN_FILL.includes(doc.fill));
-    if (!ok) throw new DomainError('doc_not_open', 'ใบเบิกนี้ยกเลิกไม่ได้');
+    if (!(doc.status === 'pending' || canCloseIssue(doc))) throw new DomainError('doc_not_open', 'ใบเบิกนี้ยกเลิกไม่ได้');
     if (doc.lines.some((l) => (l.issued || 0) > 0)) throw new DomainError('doc_issued', 'ใบเบิกนี้จ่ายของไปแล้ว ยกเลิกไม่ได้ ใช้ "ปิดใบเบิก" แทน');
     const prs = cancel ? cancelPRs(state, [doc], actor) : [];
     if (doc.status === 'pending') doc.status = 'rejected'; // ออกจากคิวรออนุมัติ
@@ -160,7 +165,7 @@
   // CSV ยอดใช้ของงาน: BOM + CRLF ให้ Excel อ่านไทยถูก
   function jobUsageCsv(state, jobId) {
     const job = jobOf(state, jobId);
-    const q = (v) => { let t = String(v ?? ''); if (typeof v === 'string' && /^[=+\-@]/.test(t)) t = "'" + t; return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const q = (v) => { let t = String(v ?? ''); if (typeof v === 'string' && /^[=+\-@\t\r]/.test(t)) t = "'" + t; return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
     const rows = [['รหัสงาน', job.id], ['ชื่องาน', job.name], [], ['รหัสสินค้า', 'สินค้า', 'หน่วย', 'เบิก', 'คืน', 'ใช้จริง']];
     for (const u of D.jobUsage(state, jobId)) {
       const p = state.products.find((x) => x.id === u.productId) || {};
@@ -169,6 +174,6 @@
     return '﻿' + rows.map((r) => r.map(q).join(',')).join('\r\n') + '\r\n';
   }
 
-  Object.assign(D, { today, nextJobId, jobHistory, openPRsOf, jobUsageCsv, similarJobs, addJob, updateJob, openDocsOf, closeJobCheck, closeJob, reopenJob, cloneJob, closeIssue, cancelIssue });
+  Object.assign(D, { today, nextJobId, jobHistory, openPRsOf, heldPRsOf, canCloseIssue, canCancelIssue, jobUsageCsv, similarJobs, addJob, updateJob, openDocsOf, closeJobCheck, closeJob, reopenJob, cloneJob, closeIssue, cancelIssue });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

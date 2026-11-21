@@ -3,7 +3,6 @@
   const { reactive, computed } = Vue;
   const { state, user, act } = AppState;
   const fmt = (n, unit) => Domain.formatQty(n ?? 0, unit);
-  const r2 = (n) => +Number(n).toFixed(2);
   const COND = { ok: 'ครบดี', damaged: 'ชำรุด', reject: 'ส่งคืนผู้ขาย' };
   const KIND = { opening: 'ยอดตั้งต้น', found: 'ของที่เจอเพิ่ม', count: 'ปรับยอดจากรอบนับ' };
 
@@ -15,14 +14,14 @@
       const userName = (id) => state.users.find((u) => u.id === id)?.name || id || '-';
       const isEng = computed(() => user.value.role === 'engineer');
       const text = reactive({}); // id → { reason, rejecting }
-      const tx = (id) => text[id] || (text[id] = { reason: '', rejecting: false });
+      const tx = (id) => text[id] || (text[id] = { reason: '', over: '', rejecting: false }); // over = เหตุผลรับเกิน, reason = เหตุผลที่ไม่รับ (คนละช่อง)
       const docOver = (d) => (d.overReason ? [] : Domain.receiveCoverage(state, d.lines).filter((c) => c.left < -1e-9).map((c) => Domain.overMessage(-c.left, byId.value.get(c.productId)?.unit)));
-      const confirmDoc = (d) => act((s, u) => Domain.confirmReceipt(s, d.id, u, true, tx(d.id).reason), 'ยืนยันยอด ' + d.id + ' แล้ว เพิ่มสต็อกเรียบร้อย');
+      const confirmDoc = (d) => act((s, u) => Domain.confirmReceipt(s, d.id, u, true, tx(d.id).over), 'ยืนยันยอด ' + d.id + ' แล้ว เพิ่มสต็อกเรียบร้อย');
       const rejectDoc = (d) => act((s, u) => Domain.confirmReceipt(s, d.id, u, false, tx(d.id).reason), 'บันทึก ' + d.id + ' ว่าไม่มีของแล้ว');
-      const ccQty = (c) => (c.kind === 'count' ? c.diff : c.rollLengths ? r2(c.rollLengths.reduce((a, b) => a + b, 0)) : c.qty);
+      const ccQty = Domain.ccQty;
       const canAct = (c) => (c.stage === 'head' ? user.value.role === 'head' : !isEng.value);
       const confirmCc = (c) => act((s, u) => Domain.confirmOpening(s, c.id, u, true), (r) => (r.stage === 'head' ? `ยืนยันแล้ว ส่งให้หัวหน้าอนุมัติต่อ (${c.id})` : 'ยืนยันยอด ' + c.id + ' แล้ว'));
-      const rejectCc = (c) => act((s, u) => Domain.confirmOpening(s, c.id, u, false, tx(c.id).reason), 'บันทึก ' + c.id + ' ว่าไม่มีของแล้ว');
+      const rejectCc = (c) => act((s, u) => Domain.confirmOpening(s, c.id, u, false, tx(c.id).reason), c.kind === 'count' ? 'ไม่อนุมัติ ' + c.id + ' แล้ว' : 'บันทึก ' + c.id + ' ว่าไม่มีของแล้ว');
       const rollTxt = (c) => (c.rollLengths ? `รวม ${c.rollLengths.length} ม้วน ${fmt(ccQty(c), byId.value.get(c.productId)?.unit)}` : null);
       return { Domain, byId, whName, userName, isEng, tx, docOver, confirmDoc, rejectDoc, ccQty, canAct, confirmCc, rejectCc, rollTxt, fmt, COND, KIND };
     },
@@ -34,14 +33,14 @@
             <span class="muted"> · {{ COND[l.condition] || l.condition }}<template v-if="l.prId"> · <doc-id :id="l.prId" /></template></span></li>
         </ul>
         <template v-if="!isEng">
-          <div v-for="o in docOver(d)" :key="o" class="rt-warn" role="alert"><span><i class="pi pi-exclamation-triangle" aria-hidden="true"></i> {{ o }}</span>
+          <div v-for="o in (tx(d.id).rejecting ? [] : docOver(d))" :key="o" class="rt-warn" role="alert"><span><i class="pi pi-exclamation-triangle" aria-hidden="true"></i> {{ o }}</span>
             <label :for="'ov' + d.id" class="rt-lbl">เหตุผลที่รับเกิน <span class="req">*</span></label>
-            <p-inputtext :id="'ov' + d.id" v-model="tx(d.id).reason" fluid /></div>
+            <p-inputtext :id="'ov' + d.id" v-model="tx(d.id).over" fluid /></div>
           <div v-if="tx(d.id).rejecting" class="field rc-mt"><label :for="'rj' + d.id">เหตุผล (จะแจ้งผู้ขอ) <span class="req">*</span></label>
             <p-inputtext :id="'rj' + d.id" v-model="tx(d.id).reason" fluid /></div>
           <div class="rc-pending-act">
             <template v-if="!tx(d.id).rejecting">
-              <p-button label="ยืนยันยอด" icon="pi pi-check" :disabled="docOver(d).length > 0 && !tx(d.id).reason.trim()" @click="confirmDoc(d)" />
+              <p-button label="ยืนยันยอด" icon="pi pi-check" :disabled="docOver(d).length > 0 && !tx(d.id).over.trim()" @click="confirmDoc(d)" />
               <p-button label="ไม่มีของ" icon="pi pi-times" severity="secondary" outlined @click="tx(d.id).rejecting = true; tx(d.id).reason = ''" />
             </template>
             <template v-else>
@@ -66,10 +65,10 @@
           <div class="rc-pending-act">
             <template v-if="!tx(c.id).rejecting">
               <p-button :label="c.stage === 'head' ? 'อนุมัติยอด' : 'ยืนยันยอด'" icon="pi pi-check" @click="confirmCc(c)" />
-              <p-button label="ไม่มีของ" icon="pi pi-times" severity="secondary" outlined @click="tx(c.id).rejecting = true; tx(c.id).reason = ''" />
+              <p-button :label="c.kind === 'count' ? 'ไม่อนุมัติ' : 'ไม่มีของ'" icon="pi pi-times" severity="secondary" outlined @click="tx(c.id).rejecting = true; tx(c.id).reason = ''" />
             </template>
             <template v-else>
-              <p-button label="ยืนยันว่าไม่มีของ" icon="pi pi-times" severity="danger" :disabled="!tx(c.id).reason.trim()" @click="rejectCc(c)" />
+              <p-button :label="c.kind === 'count' ? 'ยืนยันไม่อนุมัติ' : 'ยืนยันว่าไม่มีของ'" icon="pi pi-times" severity="danger" :disabled="!tx(c.id).reason.trim()" @click="rejectCc(c)" />
               <p-button label="ยกเลิก" severity="secondary" outlined @click="tx(c.id).rejecting = false; tx(c.id).reason = ''" />
             </template>
           </div>

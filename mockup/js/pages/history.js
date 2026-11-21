@@ -7,21 +7,22 @@
   const LABEL = {
     'category.add': 'เพิ่มหมวด', 'category.update': 'แก้หมวด', 'category.delete': 'ลบหมวด',
     'count.start': 'เปิดรอบนับ', 'count.close': 'ปิดรอบนับ', 'count.cancel': 'ยกเลิกรอบนับ', 'count.queue': 'ส่งปรับยอดให้หัวหน้า',
-    issue: 'เบิกของ', 'issue.pick': 'จ่ายของที่กันไว้', 'issue.reject': 'ไม่อนุมัติใบเบิก', 'issue.close': 'ปิดใบเบิก', 'issue.cancel': 'ยกเลิกใบเบิก',
+    issue: 'เบิกของ', 'issue.submit': 'ส่งใบเบิกรออนุมัติ', 'issue.pick': 'จ่ายของที่กันไว้', 'issue.reject': 'ไม่อนุมัติใบเบิก', 'issue.close': 'ปิดใบเบิก', 'issue.cancel': 'ยกเลิกใบเบิก',
     'job.add': 'เพิ่มงาน', 'job.update': 'แก้งาน', 'job.close': 'ปิดงาน', 'job.reopen': 'เปิดงานอีกครั้ง', 'job.clone': 'คัดลอกงาน',
     'opening.submit': 'ส่งยอดตั้งต้น', 'opening.confirm': 'Store ยืนยันยอด', 'opening.approve': 'อนุมัติยอด', 'opening.reject': 'ไม่รับยอด',
-    'opening.post': 'ลงยอดตั้งต้น', 'opening.import': 'นำเข้ายอดยกมา', 'opening.lock': 'ล็อกยอดยกมา',
+    'opening.post': 'ลงยอดตั้งต้น', 'opening.import': 'นำเข้ายอดยกมา', 'opening.lock': 'ล็อก/ปลดล็อกยอดยกมา', 'setting.approval': 'ตั้งค่าใบเบิกต้องอนุมัติ', 'hold.release': 'ลดของที่กันไว้',
     'pr.open': 'เปิดรายการต้องซื้อ', 'pr.trim': 'ลดรายการต้องซื้อ', 'pr.cancel': 'ยกเลิกรายการต้องซื้อ',
     'product.add': 'เพิ่มวัสดุ', 'product.update': 'แก้วัสดุ', 'product.active': 'เปิด/เลิกใช้วัสดุ', 'product.photo': 'เปลี่ยนรูปวัสดุ',
     'qc.restock': 'คืนเข้าชั้น', 'qc.scrap': 'ตัดเป็นของเสีย',
     receive: 'รับของเข้า', 'receive.submit': 'ส่งใบรับของ', 'receive.reject': 'ไม่รับของ',
-    return: 'คืนของ', 'return.reverse': 'ยกเลิกใบคืน',
+    return: 'คืนของ', 'return.reverse': 'กลับรายการคืน',
   };
-  const labelOf = (a) => LABEL[a] || a;
+  const labelOf = (a, text) => (a === 'opening.lock' && text ? (text.startsWith('ปลดล็อก') ? 'ปลดล็อกยอดยกมา' : 'ล็อกยอดยกมา') : LABEL[a] || a); // รหัสเดียวทั้งล็อก/ปลดล็อก แยกตามข้อความ
   // ลิงก์ไปหน้าที่มีเลขอ้างอิงนั้น (ไม่มีหน้า = ไม่ทำลิงก์)
   function linkOf(a) {
     const r = a.ref || '';
-    if (a.action === 'count.queue' || (a.action.startsWith('opening.') && a.action !== 'opening.import' && a.action !== 'opening.lock')) return ['approvals', { tab: 'cc' }];
+    if (a.action === 'count.queue' || a.action === 'opening.submit' || a.action === 'opening.confirm') return ['approvals', { tab: 'cc' }];
+    if (a.action === 'opening.post' || a.action === 'opening.approve' || a.action === 'opening.reject') return null; // ref เป็นรหัสสินค้า ไม่มีหน้าที่แสดงรายการนี้
     if (a.action.startsWith('count.')) return ['count', { id: r }];
     if (a.action === 'opening.import' || a.action === 'opening.lock') return ['opening'];
     if (/^J-/.test(r)) return ['jobs', { id: r }];
@@ -66,7 +67,7 @@
         <p-datatable :value="rows" paginator :rows="20" v-model:first="first" class="hs-table">
           <p-column header="วันที่เวลา" bodyClass="hs-when"><template #body="{ data }"><span class="num">{{ when(data.at) }}</span></template></p-column>
           <p-column header="ผู้ใช้"><template #body="{ data }">{{ nameOf(data.by) }}</template></p-column>
-          <p-column header="การกระทำ"><template #body="{ data }">{{ labelOf(data.action) }}</template></p-column>
+          <p-column header="การกระทำ"><template #body="{ data }">{{ labelOf(data.action, data.text) }}</template></p-column>
           <p-column header="เลขอ้างอิง">
             <template #body="{ data }">
               <button v-if="linkOf(data)" type="button" class="doc-link" :aria-label="'ไปที่ ' + data.ref" @click="go(...linkOf(data))"><doc-id :id="data.ref" /></button>

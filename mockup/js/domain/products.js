@@ -44,7 +44,7 @@
   }
   function checkVendor(state, vendorCode, selfId) {
     const v = norm(vendorCode);
-    const dup = v && state.products.find((x) => x.id !== selfId && norm(x.vendorCode) === v);
+    const dup = v && state.products.find((x) => x.id !== selfId && (norm(x.vendorCode) === v || norm(x.code) === v || norm(x.id) === v));
     if (dup) throw new DomainError('vendor_dup', `บาร์โค้ดนี้เป็นของ ${dup.id} ${dup.name}`);
   }
   function checkCode(state, code, selfId) {
@@ -83,14 +83,14 @@
     };
     try { checkNums(product, ['rollSize', 'scrapMin', 'buyFactor', 'reorderPoint']); } catch (e) { state.counters.P--; throw e; }
     state.products.push(product);
+    log(state, actor, 'product.add', id, 'สร้างสินค้า ' + product.name);
     let opening = null;
     const ini = input.initial;
     if (ini) {
       // submitOpening ตรวจครบก่อนแตะข้อมูล; ไม่ผ่าน = ถอยสินค้าและเลข P ไม่เหลืออะไร
       try { opening = D.submitOpening(state, { productId: id, whId: ini.whId, shelf: ini.shelf, qty: ini.qty, rollLengths: ini.rollLengths, kind: 'opening' }, actor); }
-      catch (e) { state.products.pop(); state.counters.P--; throw e; }
+      catch (e) { state.products.pop(); state.audit.pop(); state.counters.P--; throw e; }
     }
-    log(state, actor, 'product.add', id, 'สร้างสินค้า ' + product.name);
     return { product, opening };
   }
 
@@ -143,6 +143,8 @@
       // ของกันไว้ให้ใบเบิกอยู่ในยอดจริงเสมอ ถ้ายอดเป็น 0 จึงไม่มีของกันค้าง
       const pend = state.docs.find((d) => d.type === 'receive' && d.status === 'pending' && d.lines.some((l) => l.productId === id));
       if (pend) throw new DomainError('prod_pending', `เลิกใช้ไม่ได้ ใบรับ ${pend.id} ยังรอยืนยัน`);
+      const cc = (state.ccs || []).find((c) => (c.stage === 'store' || c.stage === 'head') && c.productId === id);
+      if (cc) throw new DomainError('prod_pending', `เลิกใช้ไม่ได้ ยอด ${cc.id} ยังรอยืนยัน`);
       const pr = state.prs.find((r) => r.status === 'open' && r.productId === id);
       if (pr) throw new DomainError('prod_pending', `เลิกใช้ไม่ได้ รายการต้องซื้อ ${pr.id} ยังเปิดอยู่`);
       const left = stockAnywhere(state, id);

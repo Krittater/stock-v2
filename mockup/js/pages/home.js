@@ -50,7 +50,7 @@
       openDoc(route.query.doc);
       watch(() => route.query.doc, openDoc);
       const selLines = computed(() => sel.value && sel.value.lines.map((l) => ({ l, p: byId.value.get(l.productId) })));
-      const canPick = (d) => d.type === 'issue' && d.lines.some((l) => l.reserved > 0) && (user.value.role !== 'engineer' || d.by === user.value.id);
+      const canPick = (d) => d.type === 'issue' && d.lines.some((l) => l.reserved > 0) && !state.warehouses.find((w) => w.id === d.whId)?.countId && (user.value.role !== 'engineer' || d.by === user.value.id);
       const pick = (d) => act((s, u) => Domain.pickReserved(s, d.id, u), (r) => `จ่ายของที่กันไว้ให้ ${r.id} แล้ว`);
       const retDocs = computed(() => new Set(Domain.returnable(state, user.value).map((x) => x.doc.id)));
       const waitN = computed(() => { const a = Domain.approvalItems(state, user.value); return a.ccs.length + a.receipts.length; });

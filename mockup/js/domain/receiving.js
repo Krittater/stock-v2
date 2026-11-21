@@ -150,8 +150,13 @@
     if (actor.role === 'engineer') throw new DomainError('forbidden', 'บัญชีนี้ยืนยันยอดไม่ได้ ให้ Store หรือหัวหน้ายืนยัน');
     const doc = state.docs.find((d) => d.id === docId);
     if (!doc || doc.type !== 'receive' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
-    if (accept && trim(overReason)) doc.overReason = trim(overReason); // รับเกินที่เจอตอนยืนยัน ใส่เหตุผลตอนนี้ได้
-    if (accept) post(state, doc, check(state, doc), actor); // ตรวจซ้ำตามยอดตอนนี้ (ชั้น/คลัง/ค้างรับอาจเปลี่ยนระหว่างรอ)
+    if (accept) { // รับเกินที่เจอตอนยืนยัน ใส่เหตุผลตอนนี้ได้ — ตรวจด้วยเหตุผลใหม่ก่อน แล้วค่อยบันทึกลงใบเมื่อผ่าน
+      const why = trim(overReason), keep = doc.overReason;
+      if (why) doc.overReason = why;
+      let ins;
+      try { ins = check(state, doc); } catch (e) { doc.overReason = keep; throw e; }
+      post(state, doc, ins, actor);
+    } // ตรวจซ้ำตามยอดตอนนี้ (ชั้น/คลัง/ค้างรับอาจเปลี่ยนระหว่างรอ)
     doc.status = accept ? 'posted' : 'rejected';
     if (!accept) {
       const why = trim(overReason); // ตอนปฏิเสธ ช่องนี้คือเหตุผล (จะแจ้งผู้ส่ง)

@@ -3,7 +3,6 @@
   const { ref, reactive, computed, watch, nextTick, onBeforeUnmount } = Vue;
   const { state, user, act, route, go, services } = AppState;
 
-  const OPEN_FILL = ['partial', 'waiting', 'ready'];
   const toast = (summary, detail, severity = 'success') => services.toast?.add({ severity, summary, detail, life: 4000 });
   const dateTh = (v) => (v ? new Date(v.length === 10 ? v + 'T00:00:00' : v).toLocaleDateString('th-TH', { dateStyle: 'medium' }) : '-');
   const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
@@ -11,8 +10,8 @@
   const unitOf = (id) => state.products.find((p) => p.id === id)?.unit;
   const fmt = (n, unit) => Domain.formatQty(n ?? 0, unit);
   const userName = (id) => state.users.find((u) => u.id === id)?.name || (id ? id : '-');
-  const canClose = (d) => d.status === 'posted' && OPEN_FILL.includes(d.fill);
-  const canCancel = (d) => d.status === 'pending' || (canClose(d) && !d.lines.some((l) => (l.issued || 0) > 0));
+  const canClose = Domain.canCloseIssue;
+  const canCancel = Domain.canCancelIssue;
 
   // ---------- แผงรายละเอียดงาน (ใช้ทั้งแผงขวาและ drawer) ----------
   const JobPanel = {
@@ -155,7 +154,7 @@
 
       // ---------- ปิดงาน / เปิดอีกครั้ง / คัดลอก ----------
       const cl = reactive({ open: false, cancel: true });
-      const chk = computed(() => (cl.open && job.value ? Domain.closeJobCheck(state, job.value.id) : { openDocs: [], unreturned: [], openPRs: [] }));
+      const chk = computed(() => (cl.open && job.value ? Domain.closeJobCheck(state, job.value.id) : { openDocs: [], unreturned: [], openPRs: [], heldPRs: [] }));
       const openClose = () => { cl.cancel = true; cl.open = true; };
       const confirmClose = () => {
         const r = act((s, u) => Domain.closeJob(s, job.value.id, u, { cancelPRs: cl.cancel }));
@@ -178,6 +177,7 @@
       const rq = reactive({ open: false, doc: null, kind: 'close', cancel: true });
       const openReq = (doc, kind) => Object.assign(rq, { open: true, doc, kind, cancel: true });
       const rqPRs = computed(() => (rq.doc ? Domain.openPRsOf(state, [rq.doc]).length : 0));
+      const rqHeld = computed(() => (rq.doc ? Domain.heldPRsOf(state, [rq.doc]).map((r) => r.id) : []));
       const confirmReq = () => {
         const fn = rq.kind === 'close' ? Domain.closeIssue : Domain.cancelIssue;
         const r = act((s, u) => fn(s, rq.doc.id, u, { cancelPRs: rq.cancel }));
@@ -200,7 +200,7 @@
       return {
         state, user, tab, text, first, selId, job, drawerOpen, isMobile, hl, rows, count, select, onScan, dateTh, userName,
         form, openAdd, openEdit, formCode, dup, similar, datesBad, formOk, save,
-        cl, chk, openClose, confirmClose, gotoDoc, reopen, clone, rq, rqPRs, openReq, confirmReq, exportCsv, prName, unitOf, fmt,
+        cl, chk, openClose, confirmClose, gotoDoc, reopen, clone, rq, rqPRs, rqHeld, openReq, confirmReq, exportCsv, prName, unitOf, fmt,
       };
     },
     template: `<div class="jobs-page">
@@ -308,6 +308,7 @@
             <p-checkbox v-model="cl.cancel" inputId="cl-pr" binary />
             <span>ยกเลิกรายการต้องซื้อที่ยังไม่ได้รับของ ({{ chk.openPRs.length }} รายการ)</span>
           </label>
+          <p v-if="chk.heldPRs.length" class="muted jb-empty">ไม่ยกเลิก {{ chk.heldPRs.map((r) => r.id).join(', ') }} เพราะมีใบรับที่รอ Store ยืนยันอยู่</p>
         </template>
         <template #footer>
           <p-button label="ไม่ปิด" severity="secondary" outlined @click="cl.open = false" />
@@ -323,6 +324,7 @@
             <p-checkbox v-model="rq.cancel" inputId="rq-pr" binary />
             <span>ยกเลิกรายการต้องซื้อที่ยังไม่ได้รับของ ({{ rqPRs }} รายการ)</span>
           </label>
+          <p v-if="rqHeld.length" class="muted jb-empty">ไม่ยกเลิก {{ rqHeld.join(', ') }} เพราะมีใบรับที่รอ Store ยืนยันอยู่</p>
         </template>
         <template #footer>
           <p-button label="ไม่ทำ" severity="secondary" outlined @click="rq.open = false" />

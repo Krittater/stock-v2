@@ -143,7 +143,7 @@
   function syncPRs(state, productId, whId) {
     const p = productOf(state, productId);
     const held = new Set(state.docs.filter((d) => d.type === 'receive' && d.status === 'pending').flatMap((d) => d.lines.map((l) => l.prId)));
-    const docs = state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && ['partial', 'waiting', 'ready', 'full'].includes(d.fill));
+    const docs = state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && (D.isOpenFill(d.fill) || d.fill === 'full'));
     for (const d of docs) {
       const lines = d.lines.filter((l) => l.productId === productId);
       if (!lines.length) continue;
@@ -162,7 +162,7 @@
         }
       } else if (need > have) {
         const pr = { id: nextId(state, 'PR'), productId, whId, qty: r2(need - have), received: 0, status: 'open', reqId: d.id };
-        state.prs.push(pr); d.prIds.push(pr.id);
+        state.prs.push(pr); (d.prIds || (d.prIds = [])).push(pr.id);
         notify(state, [d.by], 'warn', `${p.name} ของ ${d.id} ยังขาด จึงเปิดรายการต้องซื้อ ${pr.id}`, '#/');
         log(state, 'system', 'pr.open', pr.id, `เปิดรายการต้องซื้อ ${pr.id} ${D.formatQty(pr.qty, p.unit)} ให้ ${d.id}`);
       }
@@ -194,10 +194,39 @@
     return touched;
   }
 
+  // ยอดจริงลดลง (นับเจอน้อยกว่า) → ของที่กันไว้เกินยอด: ลดจากใบใหม่สุดก่อน ใบที่เคย ready กลับไปรอ แล้วให้ PR ตรงส่วนขาดใหม่
+  function releaseExcess(state, productId, whId) {
+    const p = productOf(state, productId);
+    const docs = state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && D.isOpenFill(d.fill))
+      .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+    let excess = r2(D.reservedAt(state, productId, whId) - D.qtyOf(state, productId, whId));
+    if (excess <= 1e-9) return [];
+    const touched = [];
+    for (const d of docs) {
+      for (const l of d.lines.slice().reverse()) {
+        if (l.productId !== productId || excess <= 0 || !(l.reserved > 0)) continue;
+        const cut = Math.min(l.reserved, excess);
+        l.reserved = r2(l.reserved - cut); excess = r2(excess - cut);
+        if (!touched.includes(d)) touched.push(d);
+      }
+      if (touched.includes(d)) {
+        const mine = d.lines.filter((l) => l.productId === productId);
+        for (const l of mine) l.covered = 0;
+        for (const l of mine) if (l.waiting - l.reserved > 0) l.covered = D.coverable(state, productId, whId, r2(l.waiting - l.reserved)); // ยอดตั้งต้นที่รอยืนยันยังครอบคลุมส่วนขาดได้
+        if (d.fill === 'ready') d.fill = d.lines.some((l) => (l.issued || 0) > 0) ? 'partial' : 'waiting';
+        notify(state, [d.by], 'warn', `${p.name} ของ ${d.id} ที่กันไว้ลดลง เพราะนับยอดจริงน้อยกว่า`, '#/');
+        log(state, 'system', 'hold.release', d.id, `ลดของที่กันไว้ให้ ${d.id} (${p.name}) ให้ไม่เกินยอดจริง`);
+      }
+    }
+    syncPRs(state, productId, whId);
+    return touched;
+  }
+
   // จ่ายของที่กันไว้ให้ใบเบิก (Store/หัวหน้าจ่ายแทนได้ วิศวกรเฉพาะใบตัวเอง)
   function pickReserved(state, docId, actor) {
     const doc = state.docs.find((d) => d.id === docId);
     if (!doc || doc.type !== 'issue' || doc.status !== 'posted') throw new DomainError('doc_missing', 'ไม่พบใบเบิกที่จ่ายได้');
+    assertWarehouseOpen(state, doc.whId);
     if (actor.role === 'engineer' && doc.by !== actor.id) throw new DomainError('forbidden', D.FORBIDDEN);
     const lines = doc.lines.filter((l) => l.reserved > 0);
     if (!lines.length) throw new DomainError('nothing_reserved', 'ยังไม่มีของที่กันไว้ให้ใบนี้');
@@ -217,7 +246,7 @@
   }
 
   Object.assign(D, {
-    reserveForWaiting, syncPRs, pickReserved, markRead, qcStock, stockIn, stockOut, putStock, log, auditFor, notify, unread,
+    reserveForWaiting, releaseExcess, syncPRs, pickReserved, markRead, qcStock, stockIn, stockOut, putStock, log, auditFor, notify, unread,
     FORBIDDEN: 'คุณทำรายการนี้ไม่ได้ ให้หัวหน้าทำแทน หรือขอให้หัวหน้าเปิดสิทธิ์',
   });
   if (typeof module !== 'undefined') module.exports = D;

@@ -93,15 +93,17 @@ test('pickReserved: วิศวกรจ่ายใบตัวเองได
 const addP2 = (s) => s.products.push({ id: 'P-0002', code: 'P-0002', name: 'สายแลน', unit: 'เมตร', categoryId: null, reorderPoint: 1, isRoll: true, rollSize: 100, scrapMin: 3 });
 const snap = (s) => JSON.stringify([s.stock, s.rolls]);
 
-test('ขาดหลังนับลด: pickReserved ไม่ตัดอะไรครึ่งทาง', () => {
+test('นับเจอน้อยกว่าที่กันไว้: ลดที่กัน ใบกลับไปรอ เปิด PR ส่วนขาด และจ่ายส่วนที่เหลือได้', () => {
   const s = mini(); addP2(s);
   const a = D.issue(s, { whId: 'W-BN', jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 5 }, { productId: 'P-0002', qty: 50 }] }, engA).doc;
   recv(s, 5); D.receive(s, { whId: 'W-BN', lines: [{ productId: 'P-0002', qty: 50, rollLengths: [50] }] }, store);
   assert.equal(a.fill, 'ready');
   const c = D.startCount(s, { whId: 'W-BN' }, head); D.setCounted(s, c.id, 'P-0002', 20); D.closeCount(s, c.id, head);
-  const before = snap(s), lines = JSON.stringify(a.lines);
-  assert.throws(() => D.pickReserved(s, a.id, store), { code: 'stock_short' });
-  assert.equal(snap(s), before); assert.equal(JSON.stringify(a.lines), lines); assert.equal(a.fill, 'ready');
+  assert.equal(a.fill, 'waiting'); assert.equal(a.lines[1].reserved, 20); assert.equal(a.lines[0].reserved, 5);
+  const pr = s.prs.filter((r) => r.reqId === a.id && r.productId === 'P-0002' && r.status === 'open');
+  assert.equal(pr.reduce((x, r) => x + r.qty - r.received, 0), 30);
+  D.pickReserved(s, a.id, store);
+  assert.equal(a.lines[1].issued, 20); assert.equal(a.lines[1].waiting, 30);
 });
 
 test('pickReserved หลายบรรทัด', () => {

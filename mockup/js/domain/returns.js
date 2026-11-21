@@ -44,9 +44,20 @@
     return () => D.putStock(state, { productId: p.id, whId, shelf, qty });
   }
 
+  // ข้อมูลเก่าที่ค้างยอดทศนิยมในหน่วยที่ต้องเป็นจำนวนเต็ม: คืนทั้งก้อน (qty = ยอดค้างทั้งหมด) ได้ ข้ามการตรวจจำนวนเต็ม
+  const isLegacyReturn = (unit, max, qty) => unit !== 'เมตร' && !Number.isInteger(max) && qty === max;
+
+  // ค้นใบเบิกที่คืนได้: เลขใบ ชื่องาน ชื่อ/ยี่ห้อ/รุ่นสินค้า (x = { doc, lines })
+  function returnMatches(state, x, q) {
+    const needle = String(q || '').trim().toLowerCase();
+    if (!needle) return true;
+    const job = state.jobs.find((j) => j.id === x.doc.jobId);
+    const hay = [x.doc.id, job && job.name, ...x.lines.map((l) => { const p = state.products.find((y) => y.id === l.productId); return p ? [p.name, p.brand, p.model].join(' ') : ''; })];
+    return hay.some((h) => (h || '').toLowerCase().includes(needle));
+  }
+
   // ใบเบิกที่ยังคืนได้ รวมต่อสินค้า (ทุกบรรทัดของสินค้านั้น) เรียงใหม่สุดก่อน; วิศวกรเห็นเฉพาะใบตัวเอง
   function returnable(state, actor, q = '') {
-    const needle = String(q || '').trim().toLowerCase();
     return state.docs
       .filter((d) => d.type === 'issue' && d.status === 'posted' && (actor.role !== 'engineer' || d.by === actor.id))
       .map((doc) => ({
@@ -60,12 +71,7 @@
         }).filter((l) => l.left > 0),
       }))
       .filter((x) => x.lines.length)
-      .filter((x) => {
-        if (!needle) return true;
-        const job = state.jobs.find((j) => j.id === x.doc.jobId);
-        const hay = [x.doc.id, job && job.name, ...x.lines.map((l) => { const p = state.products.find((y) => y.id === l.productId); return p ? [p.name, p.brand, p.model].join(' ') : ''; })];
-        return hay.some((h) => (h || '').toLowerCase().includes(needle));
-      })
+      .filter((x) => returnMatches(state, x, q))
       .sort((a, b) => b.doc.at.localeCompare(a.doc.at) || b.doc.id.localeCompare(a.doc.id));
   }
 
@@ -88,7 +94,7 @@
       const max = r2(rls.reduce((a, x) => a + left(x), 0));
       let legacy = false;
       try { validateQty(qty, p.unit); } catch (e) {
-        if (!(p.unit !== 'เมตร' && !Number.isInteger(max) && qty === max)) throw e;
+        if (!isLegacyReturn(p.unit, max, qty)) throw e;
         legacy = true;
       }
       if (!CONDITIONS.includes(l.condition)) throw new DomainError('condition_missing', 'เลือกสภาพของที่คืน');
@@ -242,6 +248,6 @@
     return { short: !!p.isRoll && qty > 0 && qty < scrapMin, scrapMin };
   }
 
-  Object.assign(D, { returnable, returnItems, returnLoose, reverseReturn, qcDecide, jobUsage, returnHint });
+  Object.assign(D, { returnable, returnMatches, isLegacyReturn, returnItems, returnLoose, reverseReturn, qcDecide, jobUsage, returnHint });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);
