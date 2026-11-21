@@ -146,6 +146,7 @@
                 </p-iconfield>
                 <p-select v-model="catFilter" :options="catGroups" optionGroupLabel="label" optionGroupChildren="items" optionLabel="name" optionValue="id"
                   showClear filter placeholder="ทุกหมวดหมู่" aria-label="กรองตามหมวด" class="pp-cat" />
+                <scan-button :kinds="['product']" @found="({ id }) => { qInput = text = state.products.find((p) => p.id === id).code; }" />
                 <p-button label="เพิ่มวัสดุ" icon="pi pi-plus" @click="openCreate" />
               </div>
               <!-- ตารางธรรมดา + p-paginator: DataTable ช้าเกิน 500ms ต่อหน้าที่ 100 แถว -->

@@ -236,6 +236,7 @@
   for (const [k, v] of Object.entries(PrimeVue)) {
     if (/^[A-Z]/.test(k) && v && typeof v === 'object' && (v.render || v.setup) && v.name) app.component('p-' + k.toLowerCase(), v);
   }
+  app.component('scan-button', window.ScanButton);
   UI.install(app);
   AppState.services.toast = app.config.globalProperties.$toast;
   AppState.services.confirm = app.config.globalProperties.$confirm;
