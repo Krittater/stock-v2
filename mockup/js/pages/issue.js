@@ -88,7 +88,7 @@
       const rowQty = (p) => Domain.available(state, p.id, whOf(p));
       const rowStatus = (p) => (state.warehouses.find((w) => w.id === whOf(p))?.countId ? 'counting' : Domain.stockStatus(state, p, whOf(p)));
       const setRowWh = (p, id) => { rowWh[p.id] = id === cart.value.whId ? undefined : id; };
-      const whOptions = (p) => state.warehouses.map((w) => ({ id: w.id, label: `${w.name} · ${fmt(Domain.available(state, p.id, w.id), p.unit)}` }));
+      const whOptions = (p) => state.warehouses.map((w) => ({ id: w.id, label: `${w.name} · ${fmt(Domain.available(state, p.id, w.id), p.unit)}${Domain.pendingOpening(state, p.id, w.id) > 0 ? ` · รอยืนยัน ${fmt(Domain.pendingOpening(state, p.id, w.id), p.unit)}` : ''}` }));
       const cartStatus = (p) => Domain.stockStatus(state, p, cart.value.whId);
 
       const flashId = ref(null);
@@ -105,7 +105,7 @@
 
       const detail = ref(null);
       const detailWh = computed(() => detail.value && state.warehouses.map((w) => ({
-        w, qty: Domain.available(state, detail.value.id, w.id), status: w.countId ? 'counting' : Domain.stockStatus(state, detail.value, w.id),
+        w, qty: Domain.available(state, detail.value.id, w.id), pending: Domain.pendingOpening(state, detail.value.id, w.id), status: w.countId ? 'counting' : Domain.stockStatus(state, detail.value, w.id),
       })));
       const detailPRs = computed(() => detail.value && state.prs.filter((r) => r.productId === detail.value.id && r.status === 'open'));
       const addFromDetail = () => { add(detail.value); detail.value = null; };
@@ -398,7 +398,8 @@
           <p class="muted detail-code">รหัส: {{ detail.code }} · {{ Domain.categoryPath(state, detail.categoryId) }}</p>
           <h3 class="dlg-h">ยอดแต่ละคลัง</h3>
           <div v-for="r in detailWh" :key="r.w.id" class="detail-row">
-            <span>{{ r.w.name }}</span><span class="detail-qty"><qty :n="r.qty" :unit="detail.unit" /> <status-tag :status="r.status" /></span>
+            <span>{{ r.w.name }}</span><span class="detail-qty"><qty :n="r.qty" :unit="detail.unit" /> <status-tag :status="r.status" />
+              <span v-if="r.pending > 0" class="status-tag tone-blue">รอยืนยัน {{ Domain.formatQty(r.pending) }} {{ detail.unit }}</span></span>
           </div>
           <h3 class="dlg-h">รายการต้องซื้อที่ค้างอยู่</h3>
           <p v-if="!detailPRs.length" class="muted">ยังไม่มี</p>
@@ -458,7 +459,7 @@
         </div>
       </p-dialog>
 
-      <product-dialog v-model:visible="createOpen" :initial-name="text" from-search created-note=" เลือกให้แล้ว" @created="onCreated" />
+      <product-dialog v-model:visible="createOpen" :default-wh="cart.whId" :initial-name="text" from-search created-note=" เลือกให้แล้ว" @created="onCreated" />
     </div>`,
   };
 })();

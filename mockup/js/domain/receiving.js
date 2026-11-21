@@ -140,7 +140,7 @@
     if (doc.status === 'posted') post(state, doc, ins, actor);
     else {
       log(state, actor, 'receive.submit', doc.id, `ส่งใบรับของ${whName(state, doc.whId)} ${doc.lines.length} บรรทัด รอ Store ยืนยัน`);
-      notify(state, state.users.filter((u) => u.role === 'store').map((u) => u.id), 'info', `${actor.name || actor.id} ส่งใบรับของ ${doc.id} รอ Store ยืนยันยอด`, '#/approvals');
+      notify(state, state.users.filter((u) => u.role === 'store').map((u) => u.id), 'info', `${actor.name || actor.id} ส่งใบรับของ ${doc.id} รอ Store ยืนยันยอด`, '#/approvals?tab=cc');
     }
     state.docs.push(doc);
     return doc;

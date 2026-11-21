@@ -272,3 +272,17 @@ test('postIssue: ยอดรอยืนยัน 10 กับสองบร�
   assert.deepEqual(r.doc.lines.map((l) => l.covered), [10, 0]);
   assert.equal(r.prs.length, 1); assert.equal(r.prs[0].qty, 10);
 });
+
+test('openingLead: 3 variants (OS-G5)', () => {
+  assert.equal(D.openingLead('head', true), 'ยอดเข้าคลังทันที');
+  assert.equal(D.openingLead('store', false), 'ยอดเข้าคลังทันที');
+  assert.equal(D.openingLead('store', true), 'หัวหน้าจะอนุมัติยอดก่อนเข้าคลัง');
+  assert.equal(D.openingLead('engineer', false), 'Store จะตรวจยืนยันยอดก่อนเข้าคลัง');
+});
+test('openingProblems: inline texts (OS-AC7)', () => {
+  assert.deepEqual(D.openingProblems({ whId: W, qty: 2.5, unit: 'ตัว' }), ['ตัวต้องเป็นจำนวนเต็ม']);
+  assert.deepEqual(D.openingProblems({ whId: null, qty: null, unit: 'ตัว' }), ['เลือกคลังที่มีของ', 'ใส่จำนวนที่มีอยู่ (มากกว่า 0)']);
+  assert.deepEqual(D.openingProblems({ whId: W, isRoll: true, rolls: [85, null], unit: 'เมตร' }), ['ใส่ความยาวของทุกม้วน (มากกว่า 0)']);
+  assert.deepEqual(D.openingProblems({ whId: W, isRoll: true, rolls: [85, 40], unit: 'เมตร' }), []);
+  assert.deepEqual(D.openingProblems({ whId: W, qty: 2.5, unit: 'เมตร' }), []);
+});

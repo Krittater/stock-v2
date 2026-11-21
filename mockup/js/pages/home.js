@@ -49,10 +49,14 @@
       const canPick = (d) => d.type === 'issue' && d.lines.some((l) => l.reserved > 0) && (user.value.role !== 'engineer' || d.by === user.value.id);
       const pick = (d) => act((s, u) => Domain.pickReserved(s, d.id, u), (r) => `จ่ายของที่กันไว้ให้ ${r.id} แล้ว`);
       const retDocs = computed(() => new Set(Domain.returnable(state, user.value).map((x) => x.doc.id)));
-      return { retDocs, canPick, pick, user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, jobCode, when, go, Domain };
+      const waitN = computed(() => { const a = Domain.approvalItems(state, user.value); return a.ccs.length + a.receipts.length; });
+      return { waitN, retDocs, canPick, pick, user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, jobCode, when, go, Domain };
     },
     template: `<div class="home-page">
       <page-header icon="pi-home" title="หน้าแรก" :subtitle="'สวัสดี ' + user.name" />
+      <button v-if="user.role === 'store' && waitN" type="button" class="card home-wait" @click="go('approvals', { tab: 'cc' })">
+        <i class="pi pi-check-square" aria-hidden="true"></i><span>มียอดรอคุณยืนยัน <strong class="num">{{ waitN }}</strong></span><i class="pi pi-chevron-right" aria-hidden="true"></i>
+      </button>
       <kpi-row wh-id="W-BN" @tab="go('issue')" />
 
       <section class="card home-card" aria-labelledby="sc-h">

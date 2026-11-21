@@ -14,15 +14,19 @@
 
   const blank = (name, vendor) => ({
     name: name || '', brand: '', model: '', code: '', categoryId: null, unitPick: null, unitOther: '', isRoll: false,
-    reorderPoint: null, hasStock: false, whId: null, qty: null,
+    reorderPoint: null, hasStock: false,
     vendorCode: vendor || '', note: '', buyUnit: '', buyFactor: null, rollSize: null, scrapMin: null, needsApproval: false,
   });
 
   window.ProductDialog = {
-    props: { visible: Boolean, initialName: String, initialVendor: String, product: Object, createdNote: String, fromSearch: Boolean },
+    components: { OpeningFields: window.OpeningFields },
+    props: { defaultWh: String, visible: Boolean, initialName: String, initialVendor: String, product: Object, createdNote: String, fromSearch: Boolean },
     emits: ['update:visible', 'created', 'saved'],
     setup(props, { emit }) {
       const f = reactive(blank());
+      const op = reactive(window.openingBlank()); // ยอดที่มีอยู่ตอนสร้าง
+      const found = reactive(window.openingBlank());
+      const foundOpen = ref(false);
       const photos = ref([]); // โหมดสร้าง: เก็บในกล่องจนกดสร้าง ปิดกล่อง = ทิ้ง (PD-AC7)
       const photoBusy = ref(0);
       const more = ref(false);
@@ -47,6 +51,7 @@
       watch(() => props.visible, (v) => {
         if (!v) return;
         Object.assign(f, props.product ? fromProduct(props.product) : blank(props.initialName, props.initialVendor));
+        Object.assign(op, window.openingBlank(props.defaultWh)); foundOpen.value = false;
         photos.value = []; newCat.value = null; dtab.value = 'info'; more.value = !!props.initialVendor;
       });
 
@@ -72,7 +77,6 @@
           return { label: p.name, items: subs.length ? subs : [p] };
         });
       });
-      const openWarehouses = computed(() => state.warehouses.filter((w) => !w.countId));
       // ชื่อซ้ำตรงตัว: ตรวจรวมที่เลิกใช้ (domain ก็ตรวจรวม) แต่ "ใช้รายการนี้" ใช้ได้เฉพาะที่ยังใช้งาน
       const dup = computed(() => norm(f.name) && state.products.find((p) => p.id !== props.product?.id && norm(p.name) === norm(f.name)));
       const similar = computed(() => (dup.value || edit.value ? [] : Domain.findSimilar(state, f.name).filter((x) => !x.exact)));
@@ -81,13 +85,18 @@
         if (!norm(f.name)) m.push('ชื่อสินค้า');
         if (!f.categoryId) m.push('หมวดหมู่');
         if (!unit.value) m.push('หน่วย');
-        if (!edit.value && f.hasStock && !f.whId) m.push('คลังที่มีของ');
-        if (!edit.value && f.hasStock && !(f.qty > 0)) m.push('จำนวนที่มีอยู่ (มากกว่า 0)');
         return m;
       });
-      const stockNote = computed(() => (isEng.value
-        ? 'Store จะตรวจยืนยันยอดก่อนเข้าคลัง ระหว่างนี้เบิกได้ แต่ใบเบิกจะรอของจนกว่า Store ยืนยัน'
-        : 'ยอดเข้าคลังทันที'));
+      // ข้อความตรวจของส่วนยอดที่มีอยู่ แสดงในช่องเอง (ไม่รวมใน "ยังขาด")
+      const stockProblems = computed(() => (!edit.value && f.hasStock ? Domain.openingProblems(window.openingInput(op, f.isRoll, unit.value)) : []));
+      const needsApr = computed(() => !!f.needsApproval || Domain.catApproval(state, f.categoryId)); // รวมหมวด (Q4)
+      const foundProblems = computed(() => Domain.openingProblems(window.openingInput(found, !!props.product?.isRoll, props.product?.unit)));
+      const openFound = () => { Object.assign(found, window.openingBlank(props.defaultWh)); foundOpen.value = true; };
+      const submitFound = () => {
+        const p0 = props.product;
+        const r = act((s, u) => Domain.submitOpening(s, { productId: p0.id, whId: found.whId, shelf: found.shelf, qty: p0.isRoll ? undefined : found.qty, rollLengths: p0.isRoll ? found.rolls.slice() : undefined, kind: 'found' }, u), (x) => x.message);
+        if (r) foundOpen.value = false;
+      };
       const nextId = computed(() => 'P-' + String(state.counters.P + 1).padStart(4, '0'));
 
       // ---- รูป ----
@@ -148,7 +157,7 @@
           reorderPoint: f.reorderPoint ?? 0, vendorCode: f.vendorCode, note: f.note, buyUnit: f.buyUnit || undefined, buyFactor: f.buyFactor ?? undefined,
           rollSize: f.isRoll ? f.rollSize ?? undefined : undefined, scrapMin: f.isRoll ? f.scrapMin ?? undefined : undefined,
           needsApproval: isHead.value ? f.needsApproval : undefined, photos: photos.value.slice(),
-          initial: f.hasStock ? (f.isRoll ? { whId: f.whId, rollLengths: [f.qty] } : { whId: f.whId, qty: f.qty }) : null,
+          initial: f.hasStock ? (f.isRoll ? { whId: op.whId, shelf: op.shelf, rollLengths: op.rolls.slice() } : { whId: op.whId, shelf: op.shelf, qty: op.qty }) : null,
         };
         const r = act((s, u) => Domain.addProduct(s, input, u), (x) => {
           const o = x.opening;
@@ -156,7 +165,7 @@
         });
         if (r) { emit('created', r.product, { existing: false, opening: r.opening }); close(); }
       };
-      const submit = () => { if (!missing.value.length && !dup.value && !photoBusy.value) (edit.value ? save() : create()); };
+      const submit = () => { if (!missing.value.length && !stockProblems.value.length && !dup.value && !photoBusy.value) (edit.value ? save() : create()); };
 
       const toggleActive = () => {
         const p = props.product;
@@ -173,7 +182,7 @@
       };
 
       const header = computed(() => (!edit.value ? 'สร้างสินค้าใหม่' : viewOnly.value ? 'ดูสินค้า' : 'แก้ไขสินค้า'));
-      return { f, UNITS, OTHER, unit, catGroups, catSelect, newCat, openWarehouses, dup, similar, missing, stockNote, nextId, edit, viewOnly, isHead, isEng, active,
+      return { f, UNITS, OTHER, unit, catGroups, catSelect, newCat, op, found, foundOpen, openFound, submitFound, foundProblems, needsApr, stockProblems, dup, similar, missing, nextId, edit, viewOnly, isHead, isEng, active,
         lock, dis, note, slots, curPhotos, canAddPhoto, canRemovePhoto, pick, removePhoto, photoBusy, more, dtab, history, who, when,
         close, use, startNewCat, saveNewCat, onScan, submit, save, create, toggleActive, header, Domain };
     },
@@ -275,19 +284,8 @@
           <span>มีของนี้อยู่ในคลังแล้ว</span>
           <p-toggleswitch v-model="f.hasStock" />
         </label>
-        <div v-if="f.hasStock && !edit" class="pd-stock">
-          <div class="pd-grid">
-            <div class="field">
-              <label id="pd-wh-l">คลัง <span class="req">*</span></label>
-              <p-select v-model="f.whId" :options="openWarehouses" optionLabel="name" optionValue="id" placeholder="เลือกคลัง" ariaLabelledby="pd-wh-l" fluid />
-            </div>
-            <div class="field">
-              <label for="pd-qty">{{ f.isRoll ? 'ความยาว (ม้วนแรก)' : 'จำนวน' }} <span class="req">*</span></label>
-              <p-inputnumber inputId="pd-qty" v-model="f.qty" :min="0" :maxFractionDigits="unit === 'เมตร' ? 2 : 0" :suffix="unit ? ' ' + unit : ''" fluid />
-            </div>
-          </div>
-          <p class="pd-note"><i class="pi pi-info-circle" aria-hidden="true"></i> {{ stockNote }}</p>
-        </div>
+        <opening-fields v-if="f.hasStock && !edit" :model="op" :is-roll="f.isRoll" :unit="unit" :needs-approval="needsApr" />
+        <p-button v-if="edit" label="ลงยอดที่เจอเพิ่ม" icon="pi pi-plus-circle" severity="secondary" outlined class="pd-found-btn" @click="openFound" />
 
         <button type="button" class="pd-more" :aria-expanded="more" aria-controls="pd-extra" @click="more = !more">
           <i :class="['pi', more ? 'pi-chevron-down' : 'pi-chevron-right']" aria-hidden="true"></i> ข้อมูลเพิ่มเติม (ไม่บังคับ)</button>
@@ -353,10 +351,18 @@
             <p-button v-if="edit && isHead" :label="active ? 'เลิกใช้สินค้า' : 'เปิดใช้อีกครั้ง'" :icon="active ? 'pi pi-ban' : 'pi pi-replay'"
               :severity="active ? 'danger' : 'secondary'" text class="pd-deact" @click="toggleActive" />
             <p-button :label="viewOnly ? 'ปิด' : 'ยกเลิก'" severity="secondary" outlined @click="close" />
-            <p-button v-if="!viewOnly" :label="edit ? 'บันทึก' : 'สร้าง'" icon="pi pi-check" :disabled="!!missing.length || !!dup || !!photoBusy" @click="submit" />
+            <p-button v-if="!viewOnly" :label="edit ? 'บันทึก' : 'สร้าง'" icon="pi pi-check" :disabled="!!missing.length || !!stockProblems.length || !!dup || !!photoBusy" @click="submit" />
           </div>
         </div>
       </template>
+      <p-dialog v-model:visible="foundOpen" header="ลงยอดที่เจอเพิ่ม" modal dismissableMask class="found-dialog" :draggable="false">
+        <p class="muted pd-hint">{{ product && product.name }} — ของที่เจอบนชั้นแต่ยังไม่อยู่ในระบบ</p>
+        <opening-fields v-if="product" :model="found" :is-roll="!!product.isRoll" :unit="product.unit" :needs-approval="!!product.needsApproval" />
+        <template #footer>
+          <p-button label="ยกเลิก" severity="secondary" outlined @click="foundOpen = false" />
+          <p-button label="ลงยอด" icon="pi pi-check" :disabled="!!foundProblems.length" @click="submitFound" />
+        </template>
+      </p-dialog>
     </p-dialog>`,
   };
 })();

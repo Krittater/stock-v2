@@ -128,7 +128,9 @@
         });
       };
 
-      return { state, isEng, whName, catLabel, sessions, current, summary, pct, openSession, dlg, whOpts, catOpts, itemCount, openDlg, start,
+      const held = computed(() => (state.ccs || []).filter((c) => c.kind === 'count' && c.stage === 'head' && current.value && c.countId === current.value.id).length);
+      const isHead = computed(() => user.value.role === 'head');
+      return { held, isHead, state, isEng, whName, catLabel, sessions, current, summary, pct, openSession, dlg, whOpts, catOpts, itemCount, openDlg, start,
         qInput, filter, FILTERS, first, rows, diffView, commit, ver, next, cancelRound, closeRound, STATUS, Domain, go };
     },
     template: `<div class="count-page">
@@ -174,6 +176,7 @@
             </div>
           </div>
           <p v-if="isEng" class="muted ct-eng"><i class="pi pi-lock" aria-hidden="true"></i> เฉพาะ Store หรือหัวหน้าปิดรอบนับได้</p>
+          <p v-if="held" class="ct-held"><i class="pi pi-clock" aria-hidden="true"></i> รอหัวหน้าอนุมัติ {{ held }} รายการ<template v-if="isHead"> · <button type="button" class="doc-link" @click="go('approvals', { tab: 'cc' })">ไปอนุมัติ</button></template></p>
           <div class="ct-prog">
             <p-progressbar :value="pct" :showValue="false" aria-label="ความคืบหน้าการนับ" />
             <div class="ct-stats">

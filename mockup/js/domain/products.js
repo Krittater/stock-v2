@@ -174,6 +174,6 @@
     return p;
   }
 
-  Object.assign(D, { addProduct, updateProduct, hasHistory, setProductActive, addPhoto, removePhoto });
+  Object.assign(D, { catApproval, addProduct, updateProduct, hasHistory, setProductActive, addPhoto, removePhoto });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

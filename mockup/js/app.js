@@ -5,6 +5,7 @@
 
   const NAV = [
     { name: 'home', label: 'หน้าแรก', icon: 'pi-home' },
+    { name: 'approvals', label: 'อนุมัติ', icon: 'pi-file-check', badge: true },
     { name: 'products', label: 'คลังสินค้า', icon: 'pi-box' },
     { name: 'issue', label: 'เบิกของ', icon: 'pi-shopping-cart' },
     { name: 'returns', label: 'คืนของ', icon: 'pi-replay' },
@@ -20,8 +21,9 @@
     { name: 'warehouses', label: 'คลังสินค้า', icon: 'pi-building' },
     { name: 'jobs', label: 'โครงการ / งาน', icon: 'pi-briefcase', dup: true },
     { name: 'users', label: 'ผู้ใช้งานและสิทธิ์', icon: 'pi-users' },
+    { name: 'opening', label: 'ยอดยกมา', icon: 'pi-file-import', head: true },
   ];
-  const TITLES = { approvals: 'อนุมัติใบเบิก' };
+  const TITLES = {};
   for (const i of [...SETTINGS, ...NAV]) TITLES[i.name] = i.label;
 
   // "คลังสินค้า" กับ "ข้อมูลวัสดุ" ใช้หน้า products เดียวกัน แยก active ด้วย tab=categories
@@ -40,8 +42,12 @@
   const AppSidebar = {
     setup() {
       const pop = ref();
+      // เมนูอนุมัติ: หัวหน้า/Store เห็น (วิศวกรไม่มีเรื่องรอ) · ป้ายเลขตรงกับ Domain.approvalItems
+      const navItems = computed(() => NAV.filter((i) => i.name !== 'approvals' || user.value.role !== 'engineer'));
+      const settingsItems = computed(() => SETTINGS.filter((i) => !i.head || user.value.role === 'head'));
+      const badgeN = computed(() => { const a = Domain.approvalItems(state, user.value); return a.issues.length + a.receipts.length + a.ccs.length; });
       return {
-        NAV, SETTINGS, ROLES, state, user, pop, isActive, setRole, reset,
+        navItems, settingsItems, badgeN, NAV, SETTINGS, ROLES, state, user, pop, isActive, setRole, reset,
         openCredits: () => { pop.value.hide(); creditsOpen.value = true; },
         open: (i) => go(i.name, i.tab ? { tab: i.tab } : undefined),
         nameOf: (role) => state.users.find((u) => u.role === role)?.name,
@@ -53,13 +59,14 @@
         <span class="min-w-0"><span class="logo-name">StockPro</span><span class="logo-sub">ระบบบริหารคลังและเบิกจ่าย</span></span>
       </div>
       <div class="nav-scroll">
-        <button v-for="i in NAV" :key="i.name" type="button" class="nav-item" :class="{ active: isActive(i) }"
+        <button v-for="i in navItems" :key="i.name" type="button" class="nav-item" :class="{ active: isActive(i) }"
           :aria-current="isActive(i) ? 'page' : null" @click="open(i)">
           <i :class="['pi', i.icon]" aria-hidden="true"></i><span>{{ i.label }}</span>
           <i v-if="i.chevron" class="pi pi-chevron-down nav-chevron" aria-hidden="true"></i>
+          <span v-if="i.badge && badgeN" class="nav-badge num" :aria-label="badgeN + ' รายการรอ'">{{ badgeN }}</span>
         </button>
         <div class="nav-section">ตั้งค่า</div>
-        <button v-for="i in SETTINGS" :key="i.label" type="button" class="nav-item" :class="{ active: isActive(i) }"
+        <button v-for="i in settingsItems" :key="i.label" type="button" class="nav-item" :class="{ active: isActive(i) }"
           :aria-current="isActive(i) ? 'page' : null" @click="open(i)">
           <i :class="['pi', i.icon]" aria-hidden="true"></i><span>{{ i.label }}</span>
         </button>
@@ -103,22 +110,27 @@
       const bell = ref();
       const company = ref('SP');
       const companies = [{ id: 'SP', name: 'บริษัท เอสพี คอนสตรัคชั่น จำกัด' }];
-      const pending = computed(() => state.docs
-        .filter((d) => d.status === 'pending' && (d.type === 'issue' || d.type === 'receive'))
-        .sort((a, b) => b.at.localeCompare(a.at)));
+      // หัวหน้า: ใบเบิก+ใบรับ · Store: ใบรับของวิศวกร · วิศวกร: ของตัวเอง — ไม่ให้ Store เห็นใบเบิกรออนุมัติ
+      const apr = computed(() => Domain.approvalItems(state, user.value));
+      const pending = computed(() => (user.value.role === 'engineer'
+        ? state.docs.filter((d) => d.status === 'pending' && d.by === user.value.id && (d.type === 'issue' || d.type === 'receive'))
+        : [...apr.value.issues, ...apr.value.receipts]).slice().sort((a, b) => b.at.localeCompare(a.at)));
+      const ccs = computed(() => apr.value.ccs);
+      const ccLabel = (c) => { const p = state.products.find((x) => x.id === c.productId); return (c.kind === 'count' ? 'ปรับยอดนับ ' : 'ยอดรอยืนยัน ') + (p ? p.name : '') + ' (' + c.id + ')'; };
       const notes = computed(() => (state.notifs || []).filter((n) => n.to === user.value.id && !n.read).reverse());
-      const total = computed(() => pending.value.length + notes.value.length);
+      const total = computed(() => pending.value.length + ccs.value.length + notes.value.length);
       const openNote = (n) => { Domain.markRead(state, user.value.id, n.id); bell.value.hide(); location.hash = n.link || '#/'; };
       const nameOf = (id) => state.users.find((u) => u.id === id)?.name || id;
       const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
-      const openDoc = (d) => { bell.value.hide(); go(d.type === 'issue' ? 'approvals' : 'receive'); };
+      const openDoc = (d) => { bell.value.hide(); if (user.value.role === 'engineer') go(d.type === 'issue' ? 'issue' : 'receive'); else go('approvals', d.type === 'issue' ? undefined : { tab: 'cc' }); };
+      const openCc = () => { bell.value.hide(); go('approvals', { tab: 'cc' }); };
       const search = () => go('issue', { q: q.value.trim() });
       const onKey = (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); input.value.focus(); }
       };
       onMounted(() => window.addEventListener('keydown', onKey));
       onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
-      return { q, input, bell, company, companies, pending, notes, total, openNote, nameOf, when, openDoc, search };
+      return { q, input, bell, company, companies, pending, ccs, ccLabel, openCc, notes, total, openNote, nameOf, when, openDoc, search };
     },
     template: `<header class="topbar">
       <button type="button" class="icon-btn menu-btn" aria-label="เปิดเมนู" @click="$emit('menu')"><i class="pi pi-bars" aria-hidden="true"></i></button>
@@ -134,7 +146,7 @@
       </button>
       <p-popover ref="bell">
         <div class="bell-menu">
-          <div class="menu-label">รอดำเนินการ ({{ pending.length }})</div>
+          <div class="menu-label">รอดำเนินการ ({{ pending.length + ccs.length }})</div>
           <p v-if="!total" class="muted">ไม่มีรายการรอดำเนินการ</p>
           <button v-for="d in pending" :key="d.id" type="button" class="bell-row" @click="openDoc(d)">
             <i :class="['pi', d.type === 'issue' ? 'pi-file-check' : 'pi-download']" aria-hidden="true"></i>
@@ -142,6 +154,10 @@
               <span class="bell-title"><doc-id :id="d.id" /> · {{ d.type === 'issue' ? 'ใบเบิกรออนุมัติ' : 'ใบรับรอยืนยันยอด' }}</span>
               <span class="bell-sub">{{ nameOf(d.by) }} · {{ when(d.at) }}</span>
             </span>
+          </button>
+          <button v-for="c in ccs" :key="c.id" type="button" class="bell-row" @click="openCc">
+            <i class="pi pi-check-square" aria-hidden="true"></i>
+            <span class="min-w-0"><span class="bell-title">{{ ccLabel(c) }}</span><span class="bell-sub">{{ c.stage === 'head' ? 'รอหัวหน้าอนุมัติ' : 'รอ Store ยืนยัน' }} · {{ nameOf(c.by) }} · {{ when(c.at) }}</span></span>
           </button>
           <button v-for="n in notes" :key="n.id" type="button" class="bell-row" @click="openNote(n)">
             <i class="pi pi-inbox" aria-hidden="true"></i>

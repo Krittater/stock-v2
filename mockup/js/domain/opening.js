@@ -83,7 +83,7 @@
     const cc = { id: nextId(state, 'CC'), productId: v.p.id, whId: input.whId, shelf: v.shelf, qty: v.amount, by: actor.id, stage, reason: '', kind, at: new Date().toISOString() };
     if (v.rollLengths) cc.rollLengths = v.rollLengths;
     ccs(state).push(cc);
-    notify(state, usersOf(state, stage === 'store' ? 'store' : 'head'), 'info', `${actor.name} ส่งยอด ${v.p.name} ${text} รอ${stage === 'store' ? 'ยืนยัน' : 'อนุมัติ'} (${cc.id})`, '#/approvals');
+    notify(state, usersOf(state, stage === 'store' ? 'store' : 'head'), 'info', `${actor.name} ส่งยอด ${v.p.name} ${text} รอ${stage === 'store' ? 'ยืนยัน' : 'อนุมัติ'} (${cc.id})`, '#/approvals?tab=cc');
     log(state, actor, 'opening.submit', v.p.id, `${cc.id} ส่งยอด ${v.p.name} ${text} ${input.whId} รอ${stage === 'store' ? ' Store' : 'หัวหน้า'}`);
     return { cc, message: stage === 'store' ? `${pre}ส่งให้ Store ยืนยันยอด (${cc.id})` : `${pre}รอหัวหน้าอนุมัติยอด (${cc.id})` };
   }
@@ -95,7 +95,7 @@
     for (const o of ccs(state)) if (o.kind === 'count' && live(o) && o.productId === p.id && o.whId === count.whId) { o.stage = 'rejected'; o.reason = `แทนด้วย ${id}`; }
     const cc = { id, productId: p.id, whId: count.whId, shelf: SHELF, diff, by: actor.id, stage: 'head', reason: '', kind: 'count', countId: count.id, at: new Date().toISOString() };
     ccs(state).push(cc);
-    notify(state, usersOf(state, 'head'), 'info', `ปรับยอด ${p.name} ${diff > 0 ? '+' : ''}${D.formatQty(diff, p.unit)} จากรอบนับ ${count.id} รออนุมัติ (${cc.id})`, '#/approvals');
+    notify(state, usersOf(state, 'head'), 'info', `ปรับยอด ${p.name} ${diff > 0 ? '+' : ''}${D.formatQty(diff, p.unit)} จากรอบนับ ${count.id} รออนุมัติ (${cc.id})`, '#/approvals?tab=cc');
     log(state, actor, 'count.queue', p.id, `${cc.id} ปรับยอด ${p.name} ${diff} รอหัวหน้าอนุมัติ`);
     return cc;
   }
@@ -128,7 +128,7 @@
     }
     if (cc.stage === 'store' && actor.role === 'store' && p.needsApproval) {
       cc.stage = 'head';
-      notify(state, usersOf(state, 'head'), 'info', `${cc.id} ${p.name} ${text} Store ยืนยันแล้ว รอหัวหน้าอนุมัติ`, '#/approvals');
+      notify(state, usersOf(state, 'head'), 'info', `${cc.id} ${p.name} ${text} Store ยืนยันแล้ว รอหัวหน้าอนุมัติ`, '#/approvals?tab=cc');
       log(state, actor, 'opening.confirm', p.id, `${cc.id} Store ยืนยัน ส่งต่อหัวหน้า`);
       return cc;
     }
@@ -239,6 +239,19 @@
     return state.settings.openingLocked;
   }
 
-  Object.assign(D, { submitOpening, confirmOpening, approvalItems, pendingOpening, coverable, queueCountDiff, parseOpeningCsv, importOpening, setOpeningLock });
+  // ข้อความบอกล่วงหน้า (OS-G5): หัวหน้าเข้าทันทีเสมอ · Store เข้าทันทียกเว้นสินค้าต้องอนุมัติ · คนอื่นรอ Store
+  const openingLead = (role, needsApproval) => (role === 'head' ? 'ยอดเข้าคลังทันที'
+    : role === 'store' ? (needsApproval ? 'หัวหน้าจะอนุมัติยอดก่อนเข้าคลัง' : 'ยอดเข้าคลังทันที') : 'Store จะตรวจยืนยันยอดก่อนเข้าคลัง');
+  // ข้อความตรวจในกล่องกรอกยอด (5B.6) — in: { whId, qty, rolls[], isRoll, unit }
+  function openingProblems(i) {
+    const m = [];
+    if (!i.whId) m.push('เลือกคลังที่มีของ');
+    if (i.isRoll) { const r = i.rolls || []; if (!r.length || !r.every((l) => l > 0)) m.push('ใส่ความยาวของทุกม้วน (มากกว่า 0)'); }
+    else if (!(i.qty > 0)) m.push('ใส่จำนวนที่มีอยู่ (มากกว่า 0)');
+    else if (i.unit !== 'เมตร' && !Number.isInteger(i.qty)) m.push(`${i.unit || 'หน่วย'}ต้องเป็นจำนวนเต็ม`);
+    return m;
+  }
+
+  Object.assign(D, { openingLead, openingProblems, submitOpening, confirmOpening, approvalItems, pendingOpening, coverable, queueCountDiff, parseOpeningCsv, importOpening, setOpeningLock });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);
