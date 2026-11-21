@@ -43,7 +43,8 @@
       const selLines = computed(() => sel.value && sel.value.lines.map((l) => ({ l, p: byId.value.get(l.productId) })));
       const canPick = (d) => d.type === 'issue' && d.lines.some((l) => l.reserved > 0) && (user.value.role !== 'engineer' || d.by === user.value.id);
       const pick = (d) => act((s, u) => Domain.pickReserved(s, d.id, u), (r) => `จ่ายของที่กันไว้ให้ ${r.id} แล้ว`);
-      return { canPick, pick, user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, when, go, Domain };
+      const retDocs = computed(() => new Set(Domain.returnable(state, user.value).map((x) => x.doc.id)));
+      return { retDocs, canPick, pick, user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, when, go, Domain };
     },
     template: `<div class="home-page">
       <page-header icon="pi-home" title="หน้าแรก" :subtitle="'สวัสดี ' + user.name" />
@@ -75,7 +76,8 @@
           <p-column header="โดย"><template #body="{ data }">{{ nameOf(data.d.by) }}</template></p-column>
           <p-column header="สถานะ">
             <template #body="{ data }"><span class="status-tag" :class="data.status[1]"><span class="dot" aria-hidden="true"></span>{{ data.status[0] }}</span>
-              <p-button v-if="canPick(data.d)" label="จ่ายของ" size="small" class="ml-2" @click.stop="pick(data.d)" /></template>
+              <p-button v-if="canPick(data.d)" label="จ่ายของ" size="small" class="ml-2" @click.stop="pick(data.d)" />
+              <p-button v-if="retDocs.has(data.d.id)" label="คืนของ" icon="pi pi-replay" size="small" severity="secondary" outlined class="ml-2" @click.stop="go('returns', { doc: data.d.id })" /></template>
           </p-column>
           <template #empty><p class="muted">ยังไม่มีความเคลื่อนไหว</p></template>
         </p-datatable>

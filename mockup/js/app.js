@@ -7,6 +7,7 @@
     { name: 'home', label: 'หน้าแรก', icon: 'pi-home' },
     { name: 'products', label: 'คลังสินค้า', icon: 'pi-box' },
     { name: 'issue', label: 'เบิกของ', icon: 'pi-shopping-cart' },
+    { name: 'returns', label: 'คืนของ', icon: 'pi-replay' },
     { name: 'purchase', label: 'ขอซื้อ', icon: 'pi-shopping-bag' },
     { name: 'receive', label: 'รับของเข้า', icon: 'pi-download' },
     { name: 'transfer', label: 'โอนย้าย', icon: 'pi-arrow-right-arrow-left' },
