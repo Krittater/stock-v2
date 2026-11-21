@@ -39,7 +39,7 @@
       });
       const openWarehouses = computed(() => state.warehouses.filter((w) => !w.countId));
       const dup = computed(() => norm(f.name) && state.products.find((p) => p.id !== props.product?.id && norm(p.name) === norm(f.name)));
-      const similar = computed(() => (dup.value || edit.value ? [] : Domain.findSimilar(state, f.name)));
+      const similar = computed(() => (dup.value || edit.value ? [] : Domain.findSimilar(state, f.name).filter((x) => !x.exact)));
       const missing = computed(() => {
         const m = [];
         if (!norm(f.name)) m.push('ชื่อสินค้า');
@@ -97,9 +97,9 @@
             <span class="pd-msg-row"><span>มีสินค้านี้แล้ว: <doc-id :id="dup.id" /> {{ dup.name }}</span>
               <p-button v-if="!edit" label="ใช้รายการนี้" severity="danger" outlined @click="use(dup)" /></span>
           </p-message>
-          <p-message v-for="p in similar" :key="p.id" severity="warn" class="pd-msg">
-            <span class="pd-msg-row"><span>มีสินค้าชื่อคล้ายกันอยู่แล้ว ดูก่อนสร้าง · <doc-id :id="p.id" /> {{ p.name }}</span>
-              <p-button label="ใช้รายการนี้" severity="warn" outlined @click="use(p)" /></span>
+          <p-message v-for="m in similar" :key="m.product.id" severity="warn" class="pd-msg">
+            <span class="pd-msg-row"><span>มีสินค้าชื่อคล้ายกันอยู่แล้ว ดูก่อนสร้าง · <doc-id :id="m.product.id" /> {{ m.product.name }} · คล้าย {{ m.pct }}%</span>
+              <p-button label="ใช้รายการนี้" severity="warn" outlined @click="use(m.product)" /></span>
           </p-message>
         </div>
         <div class="pd-grid">

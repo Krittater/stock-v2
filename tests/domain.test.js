@@ -180,9 +180,9 @@ test('addProduct validation', () => {
   assert.throws(() => D.addProduct(s, { name: 'z', code: 'P-0051', unit: 'ตัว', categoryId: cat }, head), { code: 'code_dup' });
   assert.ok(D.findSimilar(s, 'สายไฟ THW 1.5').length > 0);
   assert.ok(D.findSimilar(s, 'สายไฟ THW 1.5').length <= 5);
-  assert.equal(D.updateProduct(s, product.id, { brand: 'B', id: 'X' }).id, 'P-0051');
-  assert.throws(() => D.updateProduct(s, product.id, { name: 'สายไฟ thw 1.5 SQ.MM สีดำ' }), { code: 'prod_dup' });
-  assert.doesNotThrow(() => D.updateProduct(s, product.id, { name: 'น็อตสแตนเลส M8' }));
+  assert.equal(D.updateProduct(s, product.id, { brand: 'B', id: 'X' }, head).id, 'P-0051');
+  assert.throws(() => D.updateProduct(s, product.id, { name: 'สายไฟ thw 1.5 SQ.MM สีดำ' }, head), { code: 'prod_dup' });
+  assert.doesNotThrow(() => D.updateProduct(s, product.id, { name: 'น็อตสแตนเลส M8' }, head));
 });
 
 test('store receive adds stock and closes PR', () => {

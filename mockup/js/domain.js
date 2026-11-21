@@ -137,7 +137,7 @@
     const parent = c.parentId && catOf(state, c.parentId);
     return (parent && parent.image) || null;
   }
-  const imageOf = (state, product) => product.image || categoryImage(state, product.categoryId);
+  const imageOf = (state, product) => (product.photos && product.photos[0]) || product.image || categoryImage(state, product.categoryId);
 
   // แคช haystack ต่อ product เก็บ src คู่กัน — ถ้าชื่อ/รหัส/ยี่ห้อ/รุ่น/หมวดเปลี่ยน src ไม่ตรง จึงสร้างใหม่
   const hayCache = new WeakMap();
@@ -154,6 +154,7 @@
     const paths = new Map();
     const out = [];
     for (const p of state.products) {
+      if (p.active === false && !q.includeInactive) continue;
       if (cats && !cats.has(p.categoryId)) continue;
       if (tokens.length) {
         let path = paths.get(p.categoryId);
@@ -183,9 +184,10 @@
     return c;
   }
 
-  function kpis(state, whId) {
+  function kpis(state, whId, { includeInactive = false } = {}) {
     let low = 0, out = 0;
     for (const p of state.products) {
+      if (p.active === false && !includeInactive) continue;
       const s = stockStatus(state, p, whId);
       if (s === 'low') low++; else if (s === 'out') out++;
     }
@@ -196,7 +198,9 @@
     };
   }
 
-  function warehouseOptions(state, lines) {
+  function warehouseOptions(state, allLines) {
+    const inactive = new Set(state.products.filter((p) => p.active === false).map((p) => p.id));
+    const lines = allLines.filter((l) => !inactive.has(l.productId));
     const RANK = { full: 0, partial: 1, none: 2, counting: 3 };
     return state.warehouses.map((wh, i) => {
       const total = lines.length;
@@ -237,9 +241,17 @@
   function updateCategory(state, id, patch, actor) {
     const c = catOf(state, id);
     if (!c) throw new DomainError('cat_missing', 'ไม่พบหมวดนี้');
+    const flag = 'needsApproval' in patch && !!patch.needsApproval !== !!c.needsApproval;
+    if (flag && !(actor && actor.role === 'head')) throw new DomainError('forbidden', Domain.FORBIDDEN);
     if ('name' in patch) c.name = checkCatName(state, patch.name, c.parentId, c.id);
     for (const k of ['icon', 'color', 'order', 'image']) if (k in patch) c[k] = patch[k];
-    if (Object.keys(patch).some((k) => k !== 'order')) Domain.log(state, actor, 'category.update', id, 'แก้ไขหมวด ' + c.name); // สลับลำดับอย่างเดียวไม่บันทึก
+    let ticked = 0;
+    if (flag) {
+      c.needsApproval = !!patch.needsApproval;
+      // ติ๊กแล้วสินค้าในหมวด (รวมหมวดย่อย) ติ๊กตาม; เอาติ๊กออกไม่ปลดสินค้า จะได้ไม่ถอนการควบคุมเงียบ ๆ
+      if (c.needsApproval) { const ids = descendantIds(state, id); for (const p of state.products) if (ids.has(p.categoryId) && !p.needsApproval) { p.needsApproval = true; ticked++; } }
+    }
+    if (Object.keys(patch).some((k) => k !== 'order')) Domain.log(state, actor, 'category.update', id, 'แก้ไขหมวด ' + c.name + (flag ? ` ต้องอนุมัติ=${c.needsApproval ? 'เปิด' : 'ปิด'}${ticked ? ` (ติ๊กสินค้า ${ticked} รายการ)` : ''}` : '')); // สลับลำดับอย่างเดียวไม่บันทึก
     return c;
   }
 
@@ -287,7 +299,21 @@
       .map((p) => [p, similarity(p.name, name)]).filter((x) => x[1] >= min)
       .sort((a, b) => b[1] - a[1]).slice(0, 5).map((x) => x[0]);
   }
-  const findSimilar = (state, name) => similarByName(state.products, name, 0.35);
+  // สินค้าที่ชื่อคล้าย (ไม่รวมที่เลิกใช้): ชื่อเดียวกัน (exact) ก่อน แล้วเรียงตามความคล้ายมากไปน้อย ≥ 35% ไม่เกิน 5
+  function findSimilar(state, name) {
+    const q = norm(name);
+    if (!q) return [];
+    const out = [];
+    for (const p of state.products) {
+      if (p.active === false) continue;
+      const n = norm(p.name);
+      if (n === q) { out.push({ product: p, pct: 100, exact: true }); continue; }
+      if (q.length < 3 || n.length < 3) continue;
+      const pct = Math.round(similarity(p.name, name) * 100);
+      if (pct >= 35) out.push({ product: p, pct, exact: false });
+    }
+    return out.sort((a, b) => (b.exact - a.exact) || b.pct - a.pct).slice(0, 5);
+  }
   const similarJobs = (state, name) => similarByName(state.jobs.filter((j) => j.open), name, 0.45);
 
   function addJob(state, { name, customer } = {}, actor) {
@@ -300,37 +326,6 @@
     state.jobs.push(job);
     Domain.log(state, actor, 'job.add', job.id, 'สร้างงาน ' + job.name);
     return job;
-  }
-
-  function checkProduct(state, p, selfId) {
-    if (!norm(p.name) || !p.unit) throw new DomainError('prod_required', 'ใส่ชื่อและเลือกหน่วยก่อน');
-    const dup = state.products.find((x) => x.id !== selfId && norm(x.name) === norm(p.name));
-    if (dup) throw new DomainError('prod_dup', `มีสินค้านี้แล้ว: ${dup.id} ${dup.name}`);
-    if (!catOf(state, p.categoryId)) throw new DomainError('cat_required', 'เลือกหมวดหมู่ก่อน');
-  }
-  function checkCode(state, code, selfId) {
-    if (state.products.some((x) => x.id !== selfId && x.code === code)) throw new DomainError('code_dup', `รหัสนี้ใช้แล้ว: ${code}`);
-  }
-
-  function addProduct(state, input, actor) {
-    checkProduct(state, input, null);
-    const ini = input.initial;
-    if (ini) { assertWarehouseOpen(state, ini.whId); validateQty(ini.qty, input.unit); } // ตรวจก่อนสร้าง จะได้ไม่เหลือสินค้าครึ่งๆ กลางๆ
-    const code = String(input.code ?? '').trim();
-    if (code) checkCode(state, code, null);
-    const id = nextId(state, 'P');
-    const product = {
-      id, code: code || id, name: String(input.name).trim(), brand: input.brand || '', model: input.model || '',
-      unit: input.unit, categoryId: input.categoryId, reorderPoint: input.reorderPoint ?? 0,
-      image: input.image ?? null, createdAt: new Date().toISOString(),
-      isRoll: !!input.isRoll, rollSize: input.rollSize || 100, scrapMin: input.isRoll ? (input.scrapMin ?? 3) : 0,
-      active: true, needsApproval: !!input.needsApproval, vendorCode: input.vendorCode || '', note: input.note || '',
-      buyUnit: input.buyUnit || input.unit, buyFactor: input.buyFactor || 1, photos: [],
-    };
-    state.products.push(product);
-    Domain.log(state, actor, 'product.add', id, 'สร้างสินค้า ' + product.name);
-    const receipt = ini ? receive(state, { whId: ini.whId, lines: [{ productId: id, qty: ini.qty }] }, actor) : null;
-    return { product, receipt };
   }
 
   const openPRs = (state, whId) => state.prs.filter((r) => r.status === 'open' && (!whId || r.whId === whId));
@@ -446,19 +441,6 @@
     return postIssue(state, doc, actor);
   }
 
-  function updateProduct(state, id, patch, actor) {
-    const p = state.products.find((x) => x.id === id);
-    if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้านี้');
-    const { id: _ignored, ...rest } = patch;
-    const next = { ...p, ...rest };
-    if ('name' in rest) next.name = String(rest.name).trim();
-    checkProduct(state, next, id);
-    if ('code' in rest) { next.code = String(rest.code ?? '').trim() || id; checkCode(state, next.code, id); }
-    Object.assign(p, next);
-    Domain.log(state, actor, 'product.update', id, 'แก้ไขสินค้า ' + p.name);
-    return p;
-  }
-
   const diffOf = (l) => +(l.counted - l.system).toFixed(2);
 
   function startCount(state, { whId, categoryId = null } = {}, actor) {
@@ -550,8 +532,8 @@
     DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyAt, qtyOf, available, totalQty,
     shelves, plainShelves, qcCodes, qcShelf, similarity, touchRolls,
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
-    categoryPath, descendantIds, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
-    addCategory, updateCategory, deleteCategory, productCounts, findSimilar, addProduct, updateProduct,
+    categoryPath, descendantIds, catOf, norm, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
+    addCategory, updateCategory, deleteCategory, productCounts, findSimilar,
     receive, confirmReceipt, openPRs, needsApproval, issue, approveIssue, addJob, similarJobs,
     startCount, setCounted, countSummary, closeCount, cancelCount,
   };
