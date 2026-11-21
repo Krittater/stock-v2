@@ -1,7 +1,7 @@
 // คืนของ: สภาพ (ok/damaged/scrap) ชั้น ม้วนใหม่อ้างม้วนเดิม ชั้นรอตรวจ กลับรายการ — โหลดหลัง js/domain/stock.js
 (function (root) {
   const D = root.Domain || require('../domain.js');
-  const { DomainError, validateQty, assertWarehouseOpen, nextId } = D;
+  const { DomainError, validateQty, nextId } = D;
   const r2 = (n) => +n.toFixed(2);
   const DEFAULT_SHELF = 'ทั่วไป';
   const USED = 'ของจากการคืนนี้ถูกใช้ไปแล้ว กลับรายการไม่ได้';
@@ -21,7 +21,7 @@
     const wh = state.warehouses.find((w) => w.id === whId);
     if (!wh) throw new DomainError('wh_required', 'เลือกคลังก่อน');
     if (wh.active === false) throw new DomainError('wh_inactive', `${wh.name} ปิดใช้งานอยู่ — คืนของไม่ได้ (เปิดใช้อีกครั้งก่อน)`);
-    assertWarehouseOpen(state, whId);
+    if (wh.countId) throw new DomainError('wh_counting', `${wh.name} ถูกล็อกเพื่อตรวจนับ (${wh.countId}) — คืนของไม่ได้จนกว่าจะปลดล็อก`);
     return wh;
   }
 
@@ -93,7 +93,7 @@
       }
       if (!CONDITIONS.includes(l.condition)) throw new DomainError('condition_missing', 'เลือกสภาพของที่คืน');
       sums[p.id] = r2((sums[p.id] || 0) + qty);
-      if (sums[p.id] > max + 1e-9) throw new DomainError('over_return', `${p.name} คืนได้ไม่เกิน ${max} ${p.unit} (ยอดที่เบิกไปหักที่คืนแล้ว)`);
+      if (sums[p.id] > max + 1e-9) throw new DomainError('over_return', `${p.name} คืนได้ไม่เกิน ${D.formatQty(max, p.unit)} (ยอดที่เบิกไปหักที่คืนแล้ว)`);
       const cuts = [...new Set(rls.flatMap((x) => (x.cuts || []).map((c) => c.rollId)))];
       if (l.rollId && !cuts.includes(l.rollId)) throw new DomainError('roll_not_cut', 'เลือกได้เฉพาะม้วนที่ใบเบิกนี้ตัดไป');
       const shelf = destOf(state, wh, l.condition, l.shelf ?? input.shelf ?? DEFAULT_SHELF);
@@ -136,6 +136,7 @@
     const p = productOf(state, productId);
     const wh = openWh(state, whId);
     validateQty(qty, p.unit);
+    if (jobId && !state.jobs.some((j) => j.id === jobId)) throw new DomainError('job_missing', 'ไม่พบงานนี้');
     if (!CONDITIONS.includes(condition)) throw new DomainError('condition_missing', 'เลือกสภาพของที่คืน');
     const shelf = destOf(state, wh, condition, input.shelf ?? DEFAULT_SHELF);
     const res = shelf ? prepareIn(state, p, wh.id, shelf, qty, null, false)() : null;
@@ -162,12 +163,14 @@
       if (l.newRollId) {
         const r = state.rolls.find((x) => x.id === l.newRollId);
         if (!r || r.length < l.qty - 1e-9) throw new DomainError('return_used', USED);
+        if (l.condition === 'damaged' && !(qc && r.shelf === qc.code)) throw new DomainError('return_used', USED); // ถูกตัดสินเก็บเข้าชั้นแล้ว
         rollIds.add(r.id);
+        if (!(qc && r.shelf === qc.code)) usable[l.productId] = r2((usable[l.productId] || 0) + r.length);
       } else if (l.shelf) {
         const k = D.stockKey(l.productId, rec.whId, l.shelf);
         cut[k] = r2((cut[k] || 0) + l.qty);
       }
-      if (l.shelf && !(qc && l.shelf === qc.code)) usable[l.productId] = r2((usable[l.productId] || 0) + l.qty);
+      if (!l.newRollId && l.shelf && !(qc && l.shelf === qc.code)) usable[l.productId] = r2((usable[l.productId] || 0) + l.qty);
     }
     for (const [k, n] of Object.entries(cut)) if ((state.stock[k] || 0) < n - 1e-9) throw new DomainError('return_used', USED);
     // ของที่กันไว้ให้ใบเบิกที่รอต้องไม่เสียหาย
@@ -205,6 +208,7 @@
     if (qty > have + 1e-9) throw new DomainError('qc_short', `ที่ชั้นรอตรวจมี ${p.name} แค่ ${have} ${p.unit}`);
     if (decision === 'scrap' && !why) throw new DomainError('reason_required', 'กรุณาระบุเหตุผลที่ตัดทิ้ง');
     if (decision === 'restock') {
+      if (roll && Math.abs(qty - roll.length) > 1e-9) throw new DomainError('qc_roll_whole', `ม้วนนี้ต้องย้ายทั้งม้วน ${roll.length} ${p.unit}`);
       if (!D.shelves(state, wh.id).includes(shelf)) throw new DomainError('shelf_missing', `ชั้น ${shelf} ใช้ไม่ได้ในคลังนี้ เลือกชั้นอื่น`);
       if (roll) roll.shelf = shelf;
       else { state.stock[key] = r2(state.stock[key] - qty); D.putStock(state, { productId: p.id, whId: wh.id, shelf, qty }); }
