@@ -165,3 +165,15 @@ test('cancelIssue ใบรออนุมัติ → rejected ออกจา
   assert.equal(D.qtyOf(s, 'P-0001', 'W-BN'), 100);
   assert.equal(D.closeJob(s, 'J-25-010', head).job.open, false);
 });
+
+test('nextJobId ตรงกับรหัสที่ addJob ให้ · jobUsageCsv มี BOM, CRLF, quote ถูก', () => {
+  const s = mini();
+  assert.equal(D.nextJobId(s), `J-${yy}-001`);
+  const j = D.addJob(s, { name: 'งาน "A", ใหม่' }, eng);
+  assert.equal(j.id, `J-${yy}-001`); assert.equal(D.nextJobId(s), `J-${yy}-002`);
+  const d = iss(s, 10, j.id); D.returnItems(s, { docId: d.id, whId: 'W-BN', shelf: 'ทั่วไป', lines: [{ productId: 'P-0001', qty: 3, condition: 'ok' }] }, eng);
+  const csv = D.jobUsageCsv(s, j.id);
+  assert.ok(csv.startsWith('\uFEFFรหัสงาน,' + j.id + '\r\n'));
+  assert.ok(csv.includes('ชื่องาน,"งาน ""A"", ใหม่"\r\n'));
+  assert.ok(csv.includes('P-0001,น็อต,ตัว,10,3,7\r\n'));
+});

@@ -12,6 +12,7 @@
   };
   // ใบเบิกที่ลงยอดแล้วดูจากบรรทัด: ครบทุกบรรทัด = จ่ายแล้ว · ไม่ได้ของเลย = รอของเข้า · นอกนั้น = จ่ายบางส่วน
   function statusOf(d) {
+    if (d.type === 'issue' && d.status === 'rejected' && d.fill === 'cancelled') return ['ยกเลิกแล้ว', 'tone-gray']; // ยกเลิกตอนรออนุมัติ
     if (d.type === 'issue' && d.status === 'posted') {
       if (d.fill === 'closed') return ['ปิดใบเบิกแล้ว', 'tone-gray'];
       if (d.fill === 'cancelled') return ['ยกเลิกแล้ว', 'tone-gray'];
@@ -23,6 +24,7 @@
     }
     return (STATUS[d.type] || {})[d.status] || [d.status, 'tone-gray'];
   }
+  UI.docStatus = statusOf; // หน้างานใช้ป้ายสถานะใบเบิกเดียวกัน
   const SHORTCUTS = [
     { label: 'เบิกของ', icon: 'pi-shopping-cart', to: ['issue'] },
     { label: 'รับของเข้า', icon: 'pi-download', to: ['receive'] },
@@ -36,6 +38,7 @@
       const nameOf = (id) => state.users.find((u) => u.id === id)?.name || id || '-';
       const whName = (id) => state.warehouses.find((w) => w.id === id)?.name || '-';
       const jobName = (id) => { const j = state.jobs.find((x) => x.id === id); return j ? `${j.id} ${j.name}` : '-'; };
+      const jobCode = (id) => state.jobs.find((x) => x.id === id) ? id : null;
       const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
       const rows = computed(() => [...state.docs].sort((a, b) => b.at.localeCompare(a.at)).map((d) => ({
         d, type: TYPE[d.type] || [d.type, 'secondary'], status: statusOf(d),
@@ -46,7 +49,7 @@
       const canPick = (d) => d.type === 'issue' && d.lines.some((l) => l.reserved > 0) && (user.value.role !== 'engineer' || d.by === user.value.id);
       const pick = (d) => act((s, u) => Domain.pickReserved(s, d.id, u), (r) => `จ่ายของที่กันไว้ให้ ${r.id} แล้ว`);
       const retDocs = computed(() => new Set(Domain.returnable(state, user.value).map((x) => x.doc.id)));
-      return { retDocs, canPick, pick, user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, when, go, Domain };
+      return { retDocs, canPick, pick, user, rows, first, sel, selLines, SHORTCUTS, nameOf, whName, jobName, jobCode, when, go, Domain };
     },
     template: `<div class="home-page">
       <page-header icon="pi-home" title="หน้าแรก" :subtitle="'สวัสดี ' + user.name" />
@@ -73,7 +76,7 @@
           </p-column>
           <p-column header="ประเภท"><template #body="{ data }"><p-tag :value="data.type[0]" :severity="data.type[1]" /></template></p-column>
           <p-column header="คลัง"><template #body="{ data }">{{ whName(data.d.whId) }}</template></p-column>
-          <p-column header="งาน"><template #body="{ data }">{{ data.d.jobId ? jobName(data.d.jobId) : '-' }}</template></p-column>
+          <p-column header="งาน"><template #body="{ data }"><template v-if="jobCode(data.d.jobId)"><button type="button" class="doc-link" :aria-label="'ดูงาน ' + data.d.jobId" @click.stop="go('jobs', { id: data.d.jobId })">{{ data.d.jobId }}</button> {{ jobName(data.d.jobId).slice(data.d.jobId.length + 1) }}</template><template v-else>-</template></template></p-column>
           <p-column header="รายการ" headerClass="col-num" bodyClass="col-num"><template #body="{ data }"><span class="num">{{ data.d.lines.length }}</span></template></p-column>
           <p-column header="โดย"><template #body="{ data }">{{ nameOf(data.d.by) }}</template></p-column>
           <p-column header="สถานะ">
@@ -87,7 +90,7 @@
 
       <p-dialog :visible="!!sel" @update:visible="sel = null" :header="sel ? 'เอกสาร ' + sel.id : ''" modal dismissableMask class="doc-dialog" :draggable="false">
         <template v-if="sel">
-          <p class="muted doc-meta">{{ when(sel.at) }} · {{ whName(sel.whId) }}<template v-if="sel.jobId"> · งาน {{ jobName(sel.jobId) }}</template> · โดย {{ nameOf(sel.by) }}</p>
+          <p class="muted doc-meta">{{ when(sel.at) }} · {{ whName(sel.whId) }}<template v-if="sel.jobId"> · งาน <button v-if="jobCode(sel.jobId)" type="button" class="doc-link" @click="go('jobs', { id: sel.jobId })">{{ sel.jobId }}</button> {{ jobName(sel.jobId).slice(sel.jobId.length + 1) }}</template> · โดย {{ nameOf(sel.by) }}</p>
           <p v-if="sel.note" class="doc-note">หมายเหตุ: {{ sel.note }}</p>
           <ul class="doc-lines">
             <li v-for="x in selLines" :key="x.l.productId">

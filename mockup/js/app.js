@@ -8,6 +8,7 @@
     { name: 'products', label: 'คลังสินค้า', icon: 'pi-box' },
     { name: 'issue', label: 'เบิกของ', icon: 'pi-shopping-cart' },
     { name: 'returns', label: 'คืนของ', icon: 'pi-replay' },
+    { name: 'jobs', label: 'โครงการ / งาน', icon: 'pi-briefcase' },
     { name: 'purchase', label: 'ขอซื้อ', icon: 'pi-shopping-bag' },
     { name: 'receive', label: 'รับของเข้า', icon: 'pi-download' },
     { name: 'transfer', label: 'โอนย้าย', icon: 'pi-arrow-right-arrow-left' },
@@ -17,14 +18,14 @@
   const SETTINGS = [
     { name: 'products', tab: 'categories', label: 'ข้อมูลวัสดุ', icon: 'pi-database' },
     { name: 'warehouses', label: 'คลังสินค้า', icon: 'pi-building' },
-    { name: 'jobs', label: 'โครงการ / งาน', icon: 'pi-briefcase' },
+    { name: 'jobs', label: 'โครงการ / งาน', icon: 'pi-briefcase', dup: true },
     { name: 'users', label: 'ผู้ใช้งานและสิทธิ์', icon: 'pi-users' },
   ];
   const TITLES = { approvals: 'อนุมัติใบเบิก' };
   for (const i of [...SETTINGS, ...NAV]) TITLES[i.name] = i.label;
 
   // "คลังสินค้า" กับ "ข้อมูลวัสดุ" ใช้หน้า products เดียวกัน แยก active ด้วย tab=categories
-  const isActive = (i) => route.name === i.name && (route.query.tab === 'categories') === (i.tab === 'categories');
+  const isActive = (i) => !i.dup && route.name === i.name && (route.query.tab === 'categories') === (i.tab === 'categories');
 
   const ROLES = [
     { role: 'head', label: 'หัวหน้า' },

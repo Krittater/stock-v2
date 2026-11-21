@@ -420,8 +420,8 @@
             <label for="job-name">ชื่องาน <span class="req">*</span></label>
             <p-inputtext id="job-name" v-model="jobForm.name" placeholder="เช่น ติดตั้งระบบไฟฟ้า อาคาร B" autocomplete="off" fluid autofocus />
             <p-message v-for="x in similarJobs" :key="x.job.id" severity="warn" class="pd-msg">
-              <span class="pd-msg-row"><span>มีงานชื่อคล้ายกัน · {{ x.job.id }} {{ x.job.name }}{{ x.job.open ? '' : ' (ปิดแล้ว)' }}</span>
-                <p-button label="ใช้งานนี้" severity="warn" outlined @click="useJob(x.job)" :disabled="!x.job.open" /></span>
+              <span class="pd-msg-row"><span>มีงานชื่อคล้าย: {{ x.job.id }} {{ x.job.name }}{{ x.job.open ? '' : ' (ปิดแล้ว)' }}</span>
+                <p-button v-if="x.job.open" label="ใช้งานนี้" severity="warn" outlined @click="useJob(x.job)" /></span>
             </p-message>
           </div>
           <div class="field">
