@@ -1,5 +1,5 @@
 // รับของเข้า: ตรวจครบทุกบรรทัดก่อนลงยอด (ผิดบรรทัดเดียว = ไม่ลงอะไรเลย) · รับเกินที่สั่งต้องมีเหตุผล · ไม่มีใบขอซื้อ · ม้วน · ชำรุด/ปฏิเสธ · ชั้นต่อบรรทัด
-// โหลดหลัง js/domain/opening.js (ใช้ ensurePRs)
+// โหลดหลัง js/domain/opening.js (PR ปรับผ่าน D.syncPRs ใน stock.js)
 (function (root) {
   const D = root.Domain || require('../domain.js');
   const { DomainError, validateQty, formatQty, nextId, log, notify } = D;
@@ -8,6 +8,12 @@
   const CONDITIONS = ['ok', 'damaged', 'reject'];
   const trim = (v) => String(v ?? '').trim();
 
+  const prodOf = (state, id) => {
+    const p = state.products.find((x) => x.id === id);
+    if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
+    return p;
+  };
+  const whName = (state, id) => (state.warehouses.find((w) => w.id === id) || {}).name || id;
   const outstanding = (pr) => Math.max(0, r2(pr.qty - pr.received));
 
   // คลังที่รับของได้: มี เปิดใช้ ไม่ถูกล็อกนับ (ข้อความตามสเปก 5A.6)
@@ -23,8 +29,7 @@
   function normalise(state, input, wh) {
     const out = [];
     for (const l of input.lines) {
-      const p = state.products.find((x) => x.id === l.productId);
-      if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
+      const p = prodOf(state, l.productId);
       const condition = l.condition || 'ok';
       if (!CONDITIONS.includes(condition)) throw new DomainError('cond_invalid', 'สภาพของที่รับไม่ถูกต้อง');
       let qty, rollLengths;
@@ -38,7 +43,7 @@
       }
       validateQty(qty, p.unit);
       let shelf = null;
-      if (condition === 'ok') shelf = l.shelf ?? input.shelf ?? SHELF;
+      if (condition === 'ok') shelf = l.shelf || input.shelf || SHELF;
       else if (condition === 'damaged') {
         const qc = D.qcShelf(state, wh.id);
         if (!qc) throw new DomainError('shelf_missing', 'คลังนี้ไม่มีชั้นรอตรวจ');
@@ -55,8 +60,7 @@
     const wh = checkWh(state, doc.whId);
     const arrived = new Map();
     const ins = doc.lines.map((l) => {
-      const p = state.products.find((x) => x.id === l.productId);
-      if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้า');
+      const p = prodOf(state, l.productId);
       if (p.active === false) throw new DomainError('prod_inactive', `${p.name} เลิกใช้แล้ว รับของเข้าไม่ได้`);
       validateQty(l.qty, p.unit);
       if (l.prId) {
@@ -78,8 +82,7 @@
       const pr = state.prs.find((r) => r.id === id);
       const over = r2(got - outstanding(pr));
       if (over > 1e-9 && !trim(doc.overReason)) {
-        const p = state.products.find((x) => x.id === pr.productId);
-        throw new DomainError('over_receive', `รับเกินที่สั่ง ${formatQty(over, p.unit)} ใส่เหตุผล`);
+        throw new DomainError('over_receive', `รับเกินที่สั่ง ${formatQty(over, prodOf(state, pr.productId).unit)} ใส่เหตุผล`);
       }
     }
     return ins;
@@ -102,15 +105,11 @@
     });
     doc.rollIds = doc.lines.flatMap((l) => l.rollIds);
     const filled = new Map();
-    for (const pid of gained) {
+    for (const pid of gained) { // reserveForWaiting ปรับ PR ของใบเบิกให้ตรงส่วนขาดเอง
       for (const d of D.reserveForWaiting(state, pid, doc.whId)) filled.set(d.id, d);
-      // ใบเก่ากว่าได้ของไปก่อน ใบที่ PR ถูกใช้ไปแล้วอาจขาดขึ้นมา → เปิดรายการต้องซื้อส่วนที่ขาดครั้งเดียว
-      const waiting = state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === doc.whId && (d.fill === 'partial' || d.fill === 'waiting'));
-      D.ensurePRs(state, waiting.flatMap((d) => d.lines.filter((l) => l.productId === pid).map((l) => [d, l])),
-        (d, pr) => `ของที่รับเข้าถูกกันให้ใบเก่ากว่าก่อน ${d.id} จึงเปิดรายการต้องซื้อ ${pr.id}`);
     }
     doc.filledDocs = [...filled.keys()];
-    log(state, actor, 'receive', doc.id, `รับของเข้าคลัง ${doc.whId} ${doc.lines.length} บรรทัด`);
+    log(state, actor, 'receive', doc.id, `รับของเข้า${whName(state, doc.whId)} ${doc.lines.length} บรรทัด`);
   }
 
   function receive(state, input, actor) {
@@ -125,15 +124,19 @@
     const ins = check(state, doc); // ผิดบรรทัดเดียว = ไม่ลงอะไรเลย และยังไม่กินเลขเอกสาร
     doc.id = nextId(state, 'RC');
     if (doc.status === 'posted') post(state, doc, ins, actor);
-    else notify(state, state.users.filter((u) => u.role === 'store').map((u) => u.id), 'info', `${actor.name || actor.id} ส่งใบรับของ ${doc.id} รอ Store ยืนยันยอด`, '#/approvals');
+    else {
+      log(state, actor, 'receive.submit', doc.id, `ส่งใบรับของ${whName(state, doc.whId)} ${doc.lines.length} บรรทัด รอ Store ยืนยัน`);
+      notify(state, state.users.filter((u) => u.role === 'store').map((u) => u.id), 'info', `${actor.name || actor.id} ส่งใบรับของ ${doc.id} รอ Store ยืนยันยอด`, '#/approvals');
+    }
     state.docs.push(doc);
     return doc;
   }
 
-  function confirmReceipt(state, docId, actor, accept) {
+  function confirmReceipt(state, docId, actor, accept, overReason) {
     if (actor.role === 'engineer') throw new DomainError('forbidden', 'บัญชีนี้ยืนยันยอดไม่ได้ ให้ Store หรือหัวหน้ายืนยัน');
     const doc = state.docs.find((d) => d.id === docId);
     if (!doc || doc.type !== 'receive' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
+    if (accept && trim(overReason)) doc.overReason = trim(overReason); // รับเกินที่เจอตอนยืนยัน ใส่เหตุผลตอนนี้ได้
     if (accept) post(state, doc, check(state, doc), actor); // ตรวจซ้ำตามยอดตอนนี้ (ชั้น/คลัง/ค้างรับอาจเปลี่ยนระหว่างรอ)
     doc.status = accept ? 'posted' : 'rejected';
     if (!accept) log(state, actor, 'receive.reject', doc.id, 'ไม่รับใบรับ');

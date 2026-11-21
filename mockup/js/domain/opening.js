@@ -42,9 +42,8 @@
   // ลงยอดจริง + ปรับยอดรอ + กันของให้ใบเบิกที่รอ (ผ่านการตรวจแล้ว)
   function land(state, apply, productId, whId) {
     apply();
-    const dropped = rebalance(state, productId, whId);
-    D.reserveForWaiting(state, productId, whId);
-    ensurePRs(state, dropped);
+    rebalance(state, productId, whId);
+    D.reserveForWaiting(state, productId, whId); // กันของแล้วปรับ PR ให้ตรงส่วนขาด
   }
 
   // ใบเบิกที่ยอดรอครอบคลุมไว้ (ไม่เปิด PR) ลด covered เมื่อยอดรอหายไป; คืนบรรทัดที่ลด เพื่อให้ ensurePRs ตรวจหลังกันของแล้ว
@@ -60,17 +59,6 @@
       dropped.push([d, l]);
     }
     return dropped;
-  }
-  // บรรทัดที่เสียความครอบคลุมแล้วยังไม่ได้ของกันไว้และไม่มี PR เปิดอยู่ → เปิด PR ส่วนที่ขาด แจ้งผู้เบิก
-  function ensurePRs(state, dropped, why) {
-    for (const [d, l] of dropped) {
-      const have = state.prs.filter((r) => r.reqId === d.id && r.productId === l.productId && r.status === 'open').reduce((a, r) => a + r.qty - r.received, 0);
-      const need = r2(l.waiting - l.reserved - (l.covered || 0) - have);
-      if (need <= 0) continue;
-      const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: d.whId, qty: need, received: 0, status: 'open', reqId: d.id };
-      state.prs.push(pr); d.prIds.push(pr.id);
-      notify(state, [d.by], 'warn', why ? why(d, pr) : `ยอดตั้งต้นของ ${productOf(state, l.productId).name} ไม่ครอบคลุม ${d.id} จึงเปิดรายการต้องซื้อ ${pr.id}`, '#/');
-    }
   }
   // postIssue ใช้: ส่วนขาดที่ยอดรอยังไม่ถูกใบอื่นนับครอบคลุม
   function coverable(state, productId, whId, need) {
@@ -133,7 +121,7 @@
       const why = String(reason || '').trim();
       if (!why) throw new DomainError('reason_required', 'ใส่เหตุผลก่อน (จะแจ้งผู้ขอ)');
       cc.stage = 'rejected'; cc.reason = why;
-      if (cc.kind !== 'count') ensurePRs(state, rebalance(state, cc.productId, cc.whId));
+      if (cc.kind !== 'count') { rebalance(state, cc.productId, cc.whId); D.syncPRs(state, cc.productId, cc.whId); }
       tell(`${cc.id} ${p.name} ${text} ไม่ผ่าน: ${why}`, 'warn');
       log(state, actor, 'opening.reject', p.id, `${cc.id} ไม่รับยอด ${p.name} ${text}: ${why}`);
       return cc;
@@ -239,7 +227,7 @@
       } else D.putStock(state, { productId: p.id, whId: r.whId, shelf: r.shelf, qty: r.qty, batch: r.batch || '' });
       touched.add(p.id + '|' + r.whId);
     }
-    for (const k of touched) { const [pid, wid] = k.split('|'); const dr = rebalance(state, pid, wid); D.reserveForWaiting(state, pid, wid); ensurePRs(state, dr); }
+    for (const k of touched) { const [pid, wid] = k.split('|'); rebalance(state, pid, wid); D.reserveForWaiting(state, pid, wid); }
     log(state, actor, 'opening.import', 'opening', `นำเข้ายอดยกมา ${rows.length} แถว`);
     return { imported: rows.length };
   }
@@ -251,6 +239,6 @@
     return state.settings.openingLocked;
   }
 
-  Object.assign(D, { ensurePRs, submitOpening, confirmOpening, approvalItems, pendingOpening, coverable, queueCountDiff, parseOpeningCsv, importOpening, setOpeningLock });
+  Object.assign(D, { submitOpening, confirmOpening, approvalItems, pendingOpening, coverable, queueCountDiff, parseOpeningCsv, importOpening, setOpeningLock });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

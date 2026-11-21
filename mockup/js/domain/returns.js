@@ -217,6 +217,7 @@
     } else {
       if (roll) { roll.length = r2(roll.length - qty); if (roll.length <= 0) { state.rolls.splice(state.rolls.indexOf(roll), 1); D.touchRolls(state); } }
       else state.stock[key] = r2(state.stock[key] - qty);
+      D.syncPRs(state, p.id, wh.id); // ของชำรุดที่เคยนับว่ารับแล้ว ถูกตัดทิ้ง → ใบเบิกที่รอต้องได้ PR คืน
       D.log(state, actor, 'qc.scrap', rollId || p.id, `ตัดทิ้งจากชั้นรอตรวจ: ${p.name} ${qty} ${p.unit} (${why})`);
     }
   }

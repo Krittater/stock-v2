@@ -202,3 +202,55 @@ test('PR-trim: รับตาม PR ของใบเบิกเอง ไม
   rc(s2, [{ productId: 'P-0001', qty: 5 }]);
   assert.equal(s2.docs[0].fill, 'ready'); assert.equal(s2.docs[0].lines[0].covered, 0);
 });
+
+// ---- fix round 1 ----
+const twoLine = (s, who = engA) => D.issue(s, { whId: W, jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 10 }, { productId: 'P-0001', qty: 10 }] }, who);
+test('sync: ใบเดียวสินค้าเดียวสองบรรทัด · รับไม่มี PR 5', () => {
+  const s = mini(); twoLine(s); rc(s, [{ productId: 'P-0001', qty: 5 }]);
+  assert.equal(openRemainder(s, 'P-0001'), shortfall(s, 'P-0001')); assert.equal(openRemainder(s, 'P-0001'), 15);
+});
+test('sync: ใบเดียวสองบรรทัด · คืนของ 5', () => {
+  const s = mini(); s.stock['P-0001|W-BN|ทั่วไป'] = 20;
+  const a = D.issue(s, { whId: W, jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 20 }] }, engA).doc;
+  twoLine(s, engB);
+  D.returnItems(s, { docId: a.id, whId: W, lines: [{ productId: 'P-0001', qty: 5, condition: 'ok' }] }, engA);
+  assert.equal(openRemainder(s, 'P-0001'), shortfall(s, 'P-0001')); assert.equal(openRemainder(s, 'P-0001'), 15);
+});
+test('sync: ใบเดียวสองบรรทัด · รับตาม PR บรรทัดแรก 5', () => {
+  const s = mini(); const r = twoLine(s); rc(s, [{ productId: 'P-0001', qty: 5, prId: r.prs[0].id }]);
+  assert.equal(openRemainder(s, 'P-0001'), shortfall(s, 'P-0001')); assert.equal(openRemainder(s, 'P-0001'), 15);
+});
+test('confirmReceipt รับเกินตอนยืนยัน: ใส่ overReason ตอนยืนยันได้ · PR ที่ใบรับรอยืนยันอ้างอยู่ไม่ถูกตัด', () => {
+  const s = mini(); const p = pr(s, 50);
+  const d = rc(s, [{ productId: 'P-0001', prId: p.id, qty: 50 }], engA);
+  rc(s, [{ productId: 'P-0001', qty: 20, prId: p.id }]);
+  assert.throws(() => D.confirmReceipt(s, d.id, store, true), { code: 'over_receive' });
+  D.confirmReceipt(s, d.id, store, true, 'ผู้ขายส่งเกิน');
+  assert.equal(d.status, 'posted'); assert.equal(d.overReason, 'ผู้ขายส่งเกิน'); assert.equal(D.qtyOf(s, 'P-0001', W), 70);
+  const s2 = mini(); const a = D.issue(s2, { whId: W, jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 10 }] }, engA);
+  const pend = rc(s2, [{ productId: 'P-0001', qty: 10, prId: a.prs[0].id }], engB);
+  rc(s2, [{ productId: 'P-0001', qty: 10 }]); // ของไปกันให้ใบเบิกก่อน แต่ PR ที่ใบรอยืนยันอ้างอยู่ต้องคงไว้
+  assert.equal(a.prs[0].status, 'open'); assert.equal(a.prs[0].qty, 10);
+  assert.equal(pend.status, 'pending');
+});
+test('ชั้นเป็นสตริงว่าง → ใช้ชั้นของใบ/ทั่วไป', () => {
+  const s = mini();
+  rc(s, [{ productId: 'P-0001', qty: 1, shelf: '' }]); rc(s, [{ productId: 'P-0001', qty: 2, shelf: '' }], store, { shelf: 'A-01' });
+  assert.equal(D.qtyAt(s, 'P-0001', W, 'ทั่วไป'), 1); assert.equal(D.qtyAt(s, 'P-0001', W, 'A-01'), 2);
+});
+test('ใบรับของวิศวกรที่รอยืนยันลง audit', () => {
+  const s = mini(); const d = rc(s, [{ productId: 'P-0001', qty: 1 }], engA);
+  assert.ok(s.audit.some((a) => a.action === 'receive.submit' && a.ref === d.id));
+});
+test('ชำรุดเข้าใบ PR แล้วตัดทิ้งจากชั้นรอตรวจ → ใบเบิกได้ PR คืน', () => {
+  const s = mini(); const a = D.issue(s, { whId: W, jobId: 'J-1', lines: [{ productId: 'P-0001', qty: 10 }] }, engA);
+  rc(s, [{ productId: 'P-0001', qty: 10, prId: a.prs[0].id, condition: 'damaged' }]);
+  assert.equal(a.prs[0].status, 'done');
+  D.qcDecide(s, { whId: W, productId: 'P-0001', qty: 10, decision: 'scrap', reason: 'แตก' }, store);
+  assert.equal(openRemainder(s, 'P-0001'), 10); assert.equal(openRemainder(s, 'P-0001'), shortfall(s, 'P-0001'));
+});
+test('ชำรุดในคลังที่ไม่มีชั้นรอตรวจ: ปฏิเสธ ไม่เปลี่ยนอะไร', () => {
+  const s = mini(); s.warehouses[0].shelves = s.warehouses[0].shelves.filter((x) => !x.qc); const before = snap(s);
+  assert.throws(() => rc(s, [{ productId: 'P-0001', qty: 1, condition: 'damaged' }]), { code: 'shelf_missing' });
+  assert.equal(snap(s), before);
+});

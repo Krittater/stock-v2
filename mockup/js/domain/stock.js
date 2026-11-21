@@ -138,17 +138,34 @@
   }
   const unread = (state, userId) => (state.notifs || []).filter((n) => n.to === userId && !n.read).length;
 
-  // ค้างรับของ PR ที่เปิดอยู่ของใบเบิกนี้ ต้องไม่เกินส่วนขาดที่ยังไม่ได้กัน/ไม่ถูกครอบคลุม: ส่วนเกินตัดออกจาก PR ใหม่สุดก่อน (ไม่ตัดส่วนที่รับแล้ว)
-  function trimPRs(state, d, l) {
-    const open = state.prs.filter((r) => r.reqId === d.id && r.productId === l.productId && r.status === 'open');
-    let excess = r2(open.reduce((a, r) => a + r.qty - r.received, 0) - Math.max(0, l.waiting - l.reserved - (l.covered || 0)));
-    for (const r of open.reverse()) {
-      if (excess <= 0) break;
-      const cut = Math.min(excess, r2(r.qty - r.received));
-      if (cut <= 0) continue;
-      r.qty = r2(r.qty - cut); excess = r2(excess - cut);
-      if (r.qty <= r.received + 1e-9) r.status = r.received > 0 ? 'done' : 'cancelled';
-      log(state, 'system', 'pr.trim', r.id, `ลดรายการต้องซื้อ ${r.id} ลง ${cut} เพราะ ${d.id} ได้ของจากที่อื่นแล้ว${r.status === 'open' ? '' : r.status === 'done' ? ' (ปิด)' : ' (ยกเลิก)'}`);
+  // PR ของใบเบิกต้องตรงส่วนขาดจริง: ต่อ (ใบ, สินค้า) ส่วนขาด = Σ max(0, waiting − reserved − covered) ของทุกบรรทัดสินค้านั้น
+  // ค้างรับเกิน → ตัดจาก PR ใหม่สุดก่อน (ไม่ตัดส่วนที่รับแล้ว และไม่ตัด PR ที่ใบรับรอยืนยันอ้างอยู่) · ขาด → เปิด PR ส่วนที่ขาดครั้งเดียว
+  function syncPRs(state, productId, whId) {
+    const p = productOf(state, productId);
+    const held = new Set(state.docs.filter((d) => d.type === 'receive' && d.status === 'pending').flatMap((d) => d.lines.map((l) => l.prId)));
+    const docs = state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && ['partial', 'waiting', 'ready'].includes(d.fill));
+    for (const d of docs) {
+      const lines = d.lines.filter((l) => l.productId === productId);
+      if (!lines.length) continue;
+      const need = r2(lines.reduce((a, l) => a + Math.max(0, l.waiting - l.reserved - (l.covered || 0)), 0));
+      const open = state.prs.filter((r) => r.reqId === d.id && r.productId === productId && r.status === 'open');
+      const have = r2(open.reduce((a, r) => a + r.qty - r.received, 0));
+      if (have > need) {
+        let excess = r2(have - need);
+        for (const r of open.slice().reverse()) {
+          if (excess <= 0) break;
+          const cutQty = held.has(r.id) ? 0 : Math.min(excess, r2(r.qty - r.received));
+          if (cutQty <= 0) continue;
+          r.qty = r2(r.qty - cutQty); excess = r2(excess - cutQty);
+          if (r.qty <= r.received + 1e-9) r.status = r.received > 0 ? 'done' : 'cancelled';
+          log(state, 'system', 'pr.trim', r.id, `ลดรายการต้องซื้อ ${r.id} ลง ${D.formatQty(cutQty, p.unit)} เพราะ ${d.id} ได้ของจากที่อื่นแล้ว${r.status === 'open' ? '' : r.status === 'done' ? ' (ปิด)' : ' (ยกเลิก)'}`);
+        }
+      } else if (need > have) {
+        const pr = { id: nextId(state, 'PR'), productId, whId, qty: r2(need - have), received: 0, status: 'open', reqId: d.id };
+        state.prs.push(pr); d.prIds.push(pr.id);
+        notify(state, [d.by], 'warn', `${p.name} ของ ${d.id} ยังขาด จึงเปิดรายการต้องซื้อ ${pr.id}`, '#/');
+        log(state, 'system', 'pr.open', pr.id, `เปิดรายการต้องซื้อ ${pr.id} ${D.formatQty(pr.qty, p.unit)} ให้ ${d.id}`);
+      }
     }
   }
 
@@ -166,7 +183,6 @@
         if (add <= 0) continue;
         l.reserved = r2(l.reserved + add); free = r2(free - add);
         if (l.reserved >= l.waiting - 1e-9) l.covered = 0; // กันครบแล้ว ไม่ต้องถือยอดรอยืนยันไว้อีก
-        trimPRs(state, d, l);
         if (!touched.includes(d)) touched.push(d);
       }
       if (touched.includes(d) && d.lines.every((l) => l.reserved >= l.waiting - 1e-9)) {
@@ -174,6 +190,7 @@
         notify(state, [d.by], 'info', `ของที่รอสำหรับ ${d.id} เข้าแล้ว ระบบกันไว้ให้แล้ว`, '#/');
       }
     }
+    syncPRs(state, productId, whId);
     return touched;
   }
 
@@ -200,7 +217,7 @@
   }
 
   Object.assign(D, {
-    reserveForWaiting, pickReserved, markRead, qcStock, stockIn, stockOut, putStock, log, auditFor, notify, unread,
+    reserveForWaiting, syncPRs, pickReserved, markRead, qcStock, stockIn, stockOut, putStock, log, auditFor, notify, unread,
     FORBIDDEN: 'คุณทำรายการนี้ไม่ได้ ให้หัวหน้าทำแทน หรือขอให้หัวหน้าเปิดสิทธิ์',
   });
   if (typeof module !== 'undefined') module.exports = D;
