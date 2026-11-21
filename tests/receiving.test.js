@@ -272,3 +272,14 @@ test('ปฏิเสธใบรับที่อ้าง PR → ปล่อ
   D.confirmReceipt(s, pend.id, store, false);
   assert.equal(a.prs[0].status, 'cancelled'); assert.equal(openRemainder(s, 'P-0001'), 0);
 });
+
+test('receiveCoverage: ขาด/เกิน/reject ไม่นับ · defaultRollLengths เศษม้วนสุดท้าย', () => {
+  const s = mini(); s.prs.push({ id: 'PR-1', productId: 'P-0001', whId: W, qty: 50, received: 20, status: 'open', reqId: null });
+  const cov = (lines) => D.receiveCoverage(s, lines)[0];
+  assert.equal(cov([{ prId: 'PR-1', qty: 20 }]).left, 10);
+  assert.equal(cov([{ prId: 'PR-1', qty: 40 }]).left, -10);
+  assert.equal(cov([{ prId: 'PR-1', qty: 40, condition: 'reject' }]).left, 30);
+  assert.deepEqual(D.defaultRollLengths(250, 100), [100, 100, 50]);
+  assert.deepEqual(D.defaultRollLengths(300, 100), [100, 100, 100]);
+  assert.deepEqual(D.defaultRollLengths(0, 100), []);
+});

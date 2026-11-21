@@ -120,8 +120,19 @@
     } finally { URL.revokeObjectURL(url); }
   }
 
+  // หน้าต่างพิมพ์ป้ายเลขม้วน (ใช้ร่วมหน้าคืน/รับ) labels: [{ id, name, qty }] · คืน false ถ้าเบราว์เซอร์บล็อกป๊อปอัป
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function printLabels(labels) {
+    const w = window.open('', '_blank', 'width=480,height=640');
+    if (!w) return false;
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>ป้ายเลขม้วน</title><style>body{font-family:sans-serif;margin:0}.l{padding:24px;border-bottom:2px dashed #999;page-break-inside:avoid}.i{font:700 44px monospace}.n{font-size:20px;margin-top:6px}.q{font-size:18px;color:#444}</style>${
+      labels.map((l) => `<div class="l"><div class="i">${esc(l.id)}</div><div class="n">${esc(l.name)}</div><div class="q">${esc(l.qty)}</div></div>`).join('')}`);
+    w.document.close(); w.focus(); w.print();
+    return true;
+  }
+
   window.UI = {
-    catVisual, shrink,
+    catVisual, shrink, printLabels,
     install(app) {
       app.component('cat-thumb', CatThumb);
       app.component('product-thumb', ProductThumb);

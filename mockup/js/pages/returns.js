@@ -8,7 +8,6 @@
   const DEFAULT_SHELF = 'ทั่วไป';
   const blank = (q) => q === null || q === undefined || q === '' || Number(q) === 0;
   const toast = (severity, detail, life = 4000) => services.toast?.add({ severity, summary: severity === 'warn' ? 'ทำไม่ได้' : 'ผลลัพธ์', detail, life });
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   const shrink = (f) => window.UI.shrink(f);
 
@@ -177,11 +176,8 @@
       // ---------- พิมพ์ป้ายเลขม้วน ----------
       const printLabels = (rec) => {
         const ls = rec.lines.filter((l) => l.newRollId);
-        const w = window.open('', '_blank', 'width=480,height=640');
-        if (!w) { toast('warn', 'เบราว์เซอร์บล็อกหน้าต่างพิมพ์ อนุญาตป๊อปอัปแล้วลองใหม่'); return; }
-        w.document.write(`<!doctype html><meta charset="utf-8"><title>ป้ายเลขม้วน</title><style>body{font-family:sans-serif;margin:0}.l{padding:24px;border-bottom:2px dashed #999;page-break-inside:avoid}.i{font:700 44px monospace}.n{font-size:20px;margin-top:6px}.q{font-size:18px;color:#444}</style>${
-          ls.map((l) => { const p = byId.value.get(l.productId); return `<div class="l"><div class="i">${esc(l.newRollId)}</div><div class="n">${esc(p ? p.name : l.productId)}</div><div class="q">${esc(fmt(l.qty, p && p.unit))}${l.fromRollId ? ' · จาก ' + esc(l.fromRollId) : ''}</div></div>`; }).join('')}`);
-        w.document.close(); w.focus(); w.print();
+        const items = ls.map((l) => { const p = byId.value.get(l.productId); return { id: l.newRollId, name: p ? p.name : l.productId, qty: fmt(l.qty, p && p.unit) + (l.fromRollId ? ' · จาก ' + l.fromRollId : '') }; });
+        if (!window.UI.printLabels(items)) toast('warn', 'เบราว์เซอร์บล็อกหน้าต่างพิมพ์ อนุญาตป๊อปอัปแล้วลองใหม่');
       };
 
       // ---------- คืนของที่ไม่มีใบเบิก ----------

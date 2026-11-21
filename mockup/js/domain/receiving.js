@@ -55,10 +55,28 @@
     return out;
   }
 
+  // ต่อรายการต้องซื้อ: ที่จะรับ (หน่วยหลัก ไม่นับ reject) เทียบค้างรับ · left > 0 = รับไม่ครบ, left < 0 = รับเกิน (ใช้ทั้งหน้าจอและตอนตรวจ)
+  function receiveCoverage(state, lines) {
+    const got = new Map();
+    for (const l of lines) {
+      if (!l.prId) continue;
+      got.set(l.prId, r2((got.get(l.prId) || 0) + (l.condition === 'reject' ? 0 : Number(l.qty) || 0)));
+    }
+    return [...got].map(([prId, g]) => {
+      const pr = state.prs.find((r) => r.id === prId);
+      return pr ? { prId, productId: pr.productId, got: g, left: r2(outstanding(pr) - g) } : null;
+    }).filter(Boolean);
+  }
+
+  // แถวม้วนเริ่มต้น: ม้วนละ size เศษอยู่ม้วนสุดท้าย
+  function defaultRollLengths(qty, size) {
+    const n = Math.ceil(r2(qty) / size - 1e-9);
+    return n > 0 ? Array.from({ length: n }, (_, i) => (i < n - 1 ? size : r2(qty - size * (n - 1)))) : [];
+  }
+
   // ตรวจทุกอย่างโดยไม่แตะข้อมูล; คืน stockIn ต่อบรรทัด (reject = null) ใช้ได้ทั้งตอนบันทึกและตอนยืนยัน
   function check(state, doc) {
     const wh = checkWh(state, doc.whId);
-    const arrived = new Map();
     const ins = doc.lines.map((l) => {
       const p = prodOf(state, l.productId);
       if (p.active === false) throw new DomainError('prod_inactive', `${p.name} เลิกใช้แล้ว รับของเข้าไม่ได้`);
@@ -67,7 +85,6 @@
         const pr = state.prs.find((r) => r.id === l.prId);
         if (!pr || pr.productId !== l.productId || pr.whId !== doc.whId) throw new DomainError('pr_mismatch', 'รายการต้องซื้อไม่ตรงกับสินค้าหรือคลัง');
         if (pr.status !== 'open') throw new DomainError('pr_closed', `รายการต้องซื้อ ${pr.id} ปิดแล้ว รับของเข้าไม่ได้`);
-        if (l.condition !== 'reject') arrived.set(pr.id, r2((arrived.get(pr.id) || 0) + l.qty));
       }
       if (l.condition === 'reject') return null;
       if (l.condition === 'ok') {
@@ -78,13 +95,8 @@
       }
       return D.stockIn(state, { productId: l.productId, whId: doc.whId, shelf: l.shelf, qty: l.qty, rollLengths: p.isRoll ? l.rollLengths : undefined, batch: l.batch });
     });
-    for (const [id, got] of arrived) {
-      const pr = state.prs.find((r) => r.id === id);
-      const over = r2(got - outstanding(pr));
-      if (over > 1e-9 && !trim(doc.overReason)) {
-        throw new DomainError('over_receive', `รับเกินที่สั่ง ${formatQty(over, prodOf(state, pr.productId).unit)} ใส่เหตุผล`);
-      }
-    }
+    const o = receiveCoverage(state, doc.lines).find((c) => c.left < -1e-9);
+    if (o && !trim(doc.overReason)) throw new DomainError('over_receive', `รับเกินที่สั่ง ${formatQty(-o.left, prodOf(state, o.productId).unit)} ใส่เหตุผล`);
     return ins;
   }
 
@@ -140,12 +152,14 @@
     if (accept) post(state, doc, check(state, doc), actor); // ตรวจซ้ำตามยอดตอนนี้ (ชั้น/คลัง/ค้างรับอาจเปลี่ยนระหว่างรอ)
     doc.status = accept ? 'posted' : 'rejected';
     if (!accept) {
-      log(state, actor, 'receive.reject', doc.id, 'ไม่รับใบรับ');
+      const why = trim(overReason); // ตอนปฏิเสธ ช่องนี้คือเหตุผล (จะแจ้งผู้ส่ง)
+      if (why) { doc.rejectReason = why; notify(state, [doc.by], 'warn', `ใบรับ ${doc.id} ไม่ผ่าน: ${why}`, '#/receive'); }
+      log(state, actor, 'receive.reject', doc.id, 'ไม่รับใบรับ' + (why ? ': ' + why : ''));
       for (const pid of new Set(doc.lines.map((l) => l.productId))) D.syncPRs(state, pid, doc.whId); // ปล่อย PR ที่ถูกกันไว้เพราะใบรับนี้อ้างอยู่
     }
     return doc;
   }
 
-  Object.assign(D, { receive, confirmReceipt, outstanding });
+  Object.assign(D, { receive, confirmReceipt, outstanding, receiveCoverage, defaultRollLengths });
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);
