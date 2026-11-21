@@ -8,7 +8,6 @@
   const COND = [{ v: 'ok', label: 'ครบดี' }, { v: 'damaged', label: 'ชำรุด' }, { v: 'reject', label: 'ส่งคืนผู้ขาย' }];
   const condLabel = (v) => (COND.find((c) => c.v === v) || {}).label || v;
   const DEFAULT_SHELF = 'ทั่วไป';
-  const KIND = { opening: 'ยอดตั้งต้น', found: 'ของที่เจอเพิ่ม', count: 'ปรับยอดจากรอบนับ' };
   const isBlank = (v) => v === null || v === undefined || v === '' || Number(v) === 0;
 
   window.Pages.receive = {

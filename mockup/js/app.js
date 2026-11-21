@@ -117,7 +117,8 @@
         : [...apr.value.issues, ...apr.value.receipts]).slice().sort((a, b) => b.at.localeCompare(a.at)));
       const ccs = computed(() => apr.value.ccs);
       const ccLabel = (c) => { const p = state.products.find((x) => x.id === c.productId); return (c.kind === 'count' ? 'ปรับยอดนับ ' : 'ยอดรอยืนยัน ') + (p ? p.name : '') + ' (' + c.id + ')'; };
-      const notes = computed(() => (state.notifs || []).filter((n) => n.to === user.value.id && !n.read).reverse());
+      // รายการรอที่เห็นเป็นแถวสดอยู่แล้ว (ลิงก์ไปหน้าอนุมัติ) ไม่นับซ้ำเป็นแจ้งเตือน — เฉพาะผู้ที่มีสิทธิ์อนุมัติ
+      const notes = computed(() => (state.notifs || []).filter((n) => n.to === user.value.id && !n.read && (user.value.role === 'engineer' || !(n.link || '').startsWith('#/approvals'))).reverse());
       const total = computed(() => pending.value.length + ccs.value.length + notes.value.length);
       const openNote = (n) => { Domain.markRead(state, user.value.id, n.id); bell.value.hide(); location.hash = n.link || '#/'; };
       const nameOf = (id) => state.users.find((u) => u.id === id)?.name || id;

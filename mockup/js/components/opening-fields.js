@@ -2,7 +2,7 @@
 // <opening-fields :model="o" :is-roll :unit :needs-approval /> · o = { whId, shelf, qty, rolls: [] } (แก้ในที่เดิม)
 // ใช้ร่วมกันที่กล่องสร้างสินค้า และกล่อง "ลงยอดที่เจอเพิ่ม"
 (function () {
-  const { computed, watch } = Vue;
+  const { computed, watch, ref } = Vue;
   const { state, user } = AppState;
   const SHELF = 'ทั่วไป';
   const r2 = (n) => +Number(n).toFixed(2);
@@ -20,7 +20,10 @@
       watch(shelves, (o) => { if (o.length && !o.includes(props.model.shelf)) props.model.shelf = o.includes(SHELF) ? SHELF : o[0]; });
       const total = computed(() => r2(props.model.rolls.reduce((a, b) => a + (b > 0 ? b : 0), 0)));
       const lead = computed(() => Domain.openingLead(user.value.role, props.needsApproval));
-      const problems = computed(() => Domain.openingProblems(window.openingInput(props.model, props.isRoll, props.unit)));
+      // แสดงข้อความตรวจหลังแตะช่องแล้วเท่านั้น (ปุ่มยังกดไม่ได้ตลอด เพราะ parent ตรวจเอง)
+      const touched = ref(false);
+      watch(() => [props.model.whId, props.model.qty, JSON.stringify(props.model.rolls)], () => { touched.value = true; });
+      const problems = computed(() => !touched.value ? [] : Domain.openingProblems(window.openingInput(props.model, props.isRoll, props.unit)));
       return { Domain, wh, shelves, total, lead, problems, SHELF };
     },
     template: `<div class="pd-stock">

@@ -19,6 +19,8 @@
       const whName = (id) => state.warehouses.find((w) => w.id === id)?.name || '-';
       const jobName = (id) => { const j = state.jobs.find((x) => x.id === id); return j ? `${j.id} ${j.name}` : '-'; };
       const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+      // เปิดหน้านี้ = เห็นแล้ว: ปิดแจ้งเตือนที่ลิงก์มาหน้านี้ไม่ให้ค้างเป็นยังไม่อ่าน
+      for (const n of state.notifs || []) if (n.to === user.value.id && !n.read && (n.link || '').startsWith('#/approvals')) Domain.markRead(state, user.value.id, n.id);
       const items = computed(() => Domain.approvalItems(state, user.value));
       const ccCount = computed(() => items.value.ccs.length + items.value.receipts.length);
       const tab = ref(route.query.tab === 'cc' || !isHead.value ? 'cc' : 'issues');
