@@ -174,8 +174,8 @@ test('addProduct validation', () => {
   assert.throws(() => D.addProduct(s, { name: '', unit: '', categoryId: cat }, head), { code: 'prod_required' });
   assert.throws(() => D.addProduct(s, { name: 'x', unit: 'ตัว', categoryId: 'nope' }, head), { code: 'cat_required' });
   assert.throws(() => D.addProduct(s, { name: 'สายไฟ thw 1.5 SQ.MM สีดำ', unit: 'เมตร', categoryId: cat }, head), { code: 'prod_dup' });
-  const { product, receipt } = D.addProduct(s, { name: 'น็อตสแตนเลส M8', unit: 'ตัว', categoryId: cat }, head);
-  assert.equal(product.id, 'P-0051'); assert.equal(product.code, 'P-0051'); assert.equal(receipt, null);
+  const { product, opening } = D.addProduct(s, { name: 'น็อตสแตนเลส M8', unit: 'ตัว', categoryId: cat }, head);
+  assert.equal(product.id, 'P-0051'); assert.equal(product.code, 'P-0051'); assert.equal(opening, null);
   assert.equal(product.reorderPoint, 0); assert.equal(product.image, null); assert.ok(s.products.includes(product));
   assert.throws(() => D.addProduct(s, { name: 'z', code: 'P-0051', unit: 'ตัว', categoryId: cat }, head), { code: 'code_dup' });
   assert.ok(D.findSimilar(s, 'สายไฟ THW 1.5').length > 0);
@@ -210,9 +210,9 @@ test('new product with initial stock: role decides', () => {
   const s = Seed.build({ products: 50 }); const cat = s.categories.find(c => c.parentId).id;
   const eng = s.users.find(u => u.role === 'engineer'); const head = s.users.find(u => u.role === 'head');
   const a = D.addProduct(s, { name: 'ก้ามปู 1/2 นิ้ว', unit: 'ตัว', categoryId: cat, initial: { whId: 'W-BN', qty: 100 } }, head);
-  assert.equal(a.receipt.status, 'posted'); assert.equal(D.qtyOf(s, a.product.id, 'W-BN'), 100);
+  assert.equal(a.opening.cc, null); assert.equal(D.qtyOf(s, a.product.id, 'W-BN'), 100);
   const b = D.addProduct(s, { name: 'ก้ามปู 3/4 นิ้ว', unit: 'ตัว', categoryId: cat, initial: { whId: 'W-BN', qty: 100 } }, eng);
-  assert.equal(b.receipt.status, 'pending'); assert.equal(D.qtyOf(s, b.product.id, 'W-BN'), 0);
+  assert.equal(b.opening.cc.stage, 'store'); assert.equal(D.qtyOf(s, b.product.id, 'W-BN'), 0);
 });
 test('receive validation, reject, pending PR applied on confirm, bad initial leaves no product', () => {
   const s = Seed.build({ products: 50 }); const [eng, store] = s.users; const cat = s.categories.find(c => c.parentId).id;

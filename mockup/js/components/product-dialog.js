@@ -1,5 +1,5 @@
 // กล่อง "สร้าง/แก้สินค้า" ใช้ร่วมกันหน้าเบิกและหน้าคลังสินค้า
-// <product-dialog v-model:visible="x" :initial-name="q" from-search @created="(product, { receipt, existing }) => ..." />
+// <product-dialog v-model:visible="x" :initial-name="q" from-search @created="(product, { opening, existing }) => ..." />
 //   existing = true เมื่อผู้ใช้กด "ใช้รายการนี้" (เฉพาะเมื่อเปิดจากช่องค้นหา = from-search)
 //   :product = โหมดแก้ไข/ดู (emit 'saved') · สิทธิ์ตาม Q7: วิศวกรดูอย่างเดียว (เพิ่มรูปแรกได้) · Store แก้ ชื่อ ยี่ห้อ รุ่น บาร์โค้ด หมายเหตุ · หัวหน้าแก้ได้หมด
 (function () {
@@ -121,7 +121,7 @@
       const when = (at) => new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
 
       const close = () => emit('update:visible', false);
-      const use = (p) => { emit('created', p, { existing: true, receipt: null }); close(); };
+      const use = (p) => { emit('created', p, { existing: true, opening: null }); close(); };
       const startNewCat = () => { catSelect.value?.hide(); newCat.value = ''; };
       const saveNewCat = () => {
         const cat = act((s, u) => Domain.addCategory(s, { name: newCat.value }, u), (c) => `สร้างหมวด "${c.name}" แล้ว`);
@@ -151,16 +151,10 @@
           initial: f.hasStock ? (f.isRoll ? { whId: f.whId, rollLengths: [f.qty] } : { whId: f.whId, qty: f.qty }) : null,
         };
         const r = act((s, u) => Domain.addProduct(s, input, u), (x) => {
-          let msg = `สร้างแล้ว: ${x.product.name} (${x.product.id})${props.createdNote || ''}`;
-          const rc = x.receipt;
-          if (rc) {
-            const q = Domain.formatQty(rc.lines[0].qty, x.product.unit);
-            msg += rc.status === 'posted' ? ` · ลงยอด ${q} เข้าคลังแล้ว`
-              : ` · ส่งให้ Store ยืนยันยอด ${q} แล้ว (${rc.id}) ระหว่างนี้เบิกได้ แต่จะรอของ`;
-          }
-          return msg;
+          const o = x.opening;
+          return o ? o.message + (props.createdNote || '') : `สร้างแล้ว: ${x.product.name} (${x.product.id})${props.createdNote || ''}`;
         });
-        if (r) { emit('created', r.product, { existing: false, receipt: r.receipt }); close(); }
+        if (r) { emit('created', r.product, { existing: false, opening: r.opening }); close(); }
       };
       const submit = () => { if (!missing.value.length && !dup.value && !photoBusy.value) (edit.value ? save() : create()); };
 

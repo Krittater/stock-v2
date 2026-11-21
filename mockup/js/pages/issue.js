@@ -111,7 +111,7 @@
       const addFromDetail = () => { add(detail.value); detail.value = null; };
 
       const createOpen = ref(false);
-      const onCreated = async (p, { existing, receipt }) => {
+      const onCreated = async (p, { existing, opening }) => {
         if (!inCart.value.has(p.id)) cart.value.lines.push({ productId: p.id, qty: 1 });
         if (existing) toast(`เลือก ${p.name} (${p.id}) แล้ว`); // สร้างใหม่: dialog โชว์ toast เอง
         await nextTick();

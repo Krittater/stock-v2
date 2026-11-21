@@ -261,7 +261,7 @@
       counters: { P: products.length, REQ: POSTED_ISSUE + PENDING, PR: prs.length, RC: RECEIVE, CC: 0, ADJ: 0, J: 0, C: categories.length, RT: 0, R: rolls.length },
       settings: { requireApproval: false, openingLocked: false },
       currentUserId: 'U-ENG',
-      users, warehouses, categories, products, stock, rolls, jobs, docs, prs, counts: [], returns: [], notifs: [], audit: [],
+      users, warehouses, categories, products, stock, rolls, jobs, docs, prs, counts: [], ccs: [], returns: [], notifs: [], audit: [],
       cart: { lines: [{ productId: 'P-0001', qty: 100 }, { productId: 'P-0002', qty: 10 }, { productId: 'P-0003', qty: 30 }], whId: 'W-BN', jobId: 'J-25-010', note: '' },
     };
   }

@@ -13,8 +13,8 @@ const msg = (m) => ({ message: m });
 
 test('PD-AC1 engineer creates a product, usable at once', () => {
   const b = base();
-  const { product, receipt } = D.addProduct(b.s, { name: 'น็อตสแตนเลส M8', unit: 'ตัว', categoryId: b.cat }, b.eng);
-  assert.equal(product.id, 'P-0051'); assert.equal(product.active, true); assert.equal(product.needsApproval, false); assert.equal(receipt, null);
+  const { product, opening } = D.addProduct(b.s, { name: 'น็อตสแตนเลส M8', unit: 'ตัว', categoryId: b.cat }, b.eng);
+  assert.equal(product.id, 'P-0051'); assert.equal(product.active, true); assert.equal(product.needsApproval, false); assert.equal(opening, null);
   assert.ok(D.searchProducts(b.s, { text: 'น็อตสแตนเลส', whId: 'W-BN' }).includes(product));
   assert.ok(b.s.audit.some((a) => a.action === 'product.add' && a.ref === 'P-0051'));
 });
@@ -152,14 +152,14 @@ test('PD-G4 vendorCode duplicates are refused on add and update; name checks on 
 test('initial stock: engineer pending, store posted, rolls by length, bad initial leaves no product', () => {
   const b = base();
   const e = D.addProduct(b.s, { name: 'ตั้งต้น 1', unit: 'ตัว', categoryId: b.cat, initial: { whId: 'W-BN', qty: 10 } }, b.eng);
-  assert.equal(e.receipt.status, 'pending'); assert.equal(D.qtyOf(b.s, e.product.id, 'W-BN'), 0);
+  assert.equal(e.opening.cc.stage, 'store'); assert.equal(D.qtyOf(b.s, e.product.id, 'W-BN'), 0);
   const r = D.addProduct(b.s, { name: 'สายตั้งต้น', unit: 'เมตร', isRoll: true, categoryId: b.cat, initial: { whId: 'W-BN', rollLengths: [100, 40] } }, b.store);
-  assert.equal(D.qtyOf(b.s, r.product.id, 'W-BN'), 140); assert.equal(r.receipt.status, 'posted');
-  const n = b.s.products.length, pc = b.s.counters.P, nd = b.s.docs.length, rc = b.s.counters.RC, na = b.s.audit.length;
-  for (const initial of [{ whId: 'W-BN', qty: 0 }, { whId: 'W-BN', qty: 1.5 }, { whId: 'W-BN', shelf: 'ไม่มี', qty: 1 }, { whId: 'nope', qty: 1 }])
+  assert.equal(D.qtyOf(b.s, r.product.id, 'W-BN'), 140); assert.equal(r.opening.cc, null);
+  const n = b.s.products.length, pc = b.s.counters.P, nd = b.s.docs.length, rc = b.s.counters.CC, na = b.s.audit.length;
+  for (const initial of [{ whId: 'W-BN', qty: 0 }, { whId: 'W-BN', qty: 1.5 }, { whId: 'nope', qty: 1 }])
     assert.throws(() => D.addProduct(b.s, { name: 'พัง', unit: 'ตัว', categoryId: b.cat, initial }, b.store), D.DomainError);
   assert.equal(b.s.products.length, n); assert.equal(b.s.counters.P, pc);
-  assert.equal(b.s.docs.length, nd); assert.equal(b.s.counters.RC, rc); assert.equal(b.s.audit.length, na);
+  assert.equal(b.s.docs.length, nd); assert.equal(b.s.counters.CC, rc); assert.equal(b.s.audit.length, na);
 });
 test('fix1: inactive products get no count line', () => {
   const b = base(); const p = mk(b);

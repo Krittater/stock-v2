@@ -27,7 +27,8 @@
   function hasHistory(state, id) {
     const inLines = (list) => (list || []).some((x) => (x.lines || []).some((l) => l.productId === id));
     return inLines(state.docs) || inLines(state.returns) || inLines(state.counts)
-      || state.rolls.some((r) => r.productId === id) || state.prs.some((r) => r.productId === id);
+      || state.rolls.some((r) => r.productId === id) || state.prs.some((r) => r.productId === id)
+      || (state.ccs || []).some((c) => c.productId === id);
   }
 
   function catApproval(state, categoryId) {
@@ -81,19 +82,16 @@
       vendorCode, note: String(input.note ?? '').trim(), buyUnit: input.buyUnit || unit, buyFactor: input.buyFactor ?? 1, photos,
     };
     try { checkNums(product, ['rollSize', 'scrapMin', 'buyFactor', 'reorderPoint']); } catch (e) { state.counters.P--; throw e; }
-    let receipt = null;
     state.products.push(product);
+    let opening = null;
     const ini = input.initial;
     if (ini) {
-      // ponytail: Task 12 แทนด้วย D.submitOpening; ตรวจ+ลงผ่าน receive แล้วถอยทั้งก้อนถ้าไม่ผ่าน จะได้ไม่เหลือสินค้าครึ่งๆ กลางๆ
-      try {
-        const line = { productId: id, shelf: ini.shelf || 'ทั่วไป' };
-        if (ini.rollLengths && ini.rollLengths.length) { line.rollLengths = ini.rollLengths; line.qty = r2(ini.rollLengths.reduce((a, b) => a + b, 0)); } else line.qty = ini.qty;
-        receipt = D.receive(state, { whId: ini.whId, lines: [line] }, actor);
-      } catch (e) { state.products.pop(); state.counters.P--; throw e; }
+      // submitOpening ตรวจครบก่อนแตะข้อมูล; ไม่ผ่าน = ถอยสินค้าและเลข P ไม่เหลืออะไร
+      try { opening = D.submitOpening(state, { productId: id, whId: ini.whId, qty: ini.qty, rollLengths: ini.rollLengths, kind: 'opening' }, actor); }
+      catch (e) { state.products.pop(); state.counters.P--; throw e; }
     }
     log(state, actor, 'product.add', id, 'สร้างสินค้า ' + product.name);
-    return { product, receipt };
+    return { product, opening };
   }
 
   const STORE_FIELDS = new Set(['name', 'brand', 'model', 'vendorCode', 'note']);

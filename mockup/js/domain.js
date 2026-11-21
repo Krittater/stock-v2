@@ -374,11 +374,15 @@
     for (const l of doc.lines) {
       l.issued = Math.min(l.qty, available(state, l.productId, doc.whId));
       if (l.issued > 0) { const o = Domain.stockOut(state, { productId: l.productId, whId: doc.whId, qty: l.issued }); l.cuts = o.cuts; l.shelves = o.shelves; got++; }
-      l.waiting = +(l.qty - l.issued).toFixed(2); l.reserved = 0;
+      l.waiting = +(l.qty - l.issued).toFixed(2); l.reserved = 0; l.covered = 0;
       if (l.issued < l.qty) {
         short++;
-        const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: doc.whId, qty: +(l.qty - l.issued).toFixed(2), received: 0, status: 'open', reqId: doc.id };
-        state.prs.push(pr); doc.prIds.push(pr.id); prs.push(pr);
+        l.covered = Domain.coverable(state, l.productId, doc.whId, l.waiting); // ส่วนที่ยอดตั้งต้นที่รอยืนยันครอบคลุม ไม่เปิดรายการต้องซื้อ (IF20/IF25)
+        const need = +(l.waiting - l.covered).toFixed(2);
+        if (need > 0) {
+          const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: doc.whId, qty: need, received: 0, status: 'open', reqId: doc.id };
+          state.prs.push(pr); doc.prIds.push(pr.id); prs.push(pr);
+        }
       }
     }
     doc.status = 'posted';
@@ -469,7 +473,10 @@
   function closeCount(state, countId, actor) {
     if (actor.role === 'engineer') throw new DomainError('forbidden', 'เฉพาะ Store หรือหัวหน้าปิดรอบนับได้');
     const count = openCount(state, countId);
-    const changed = count.lines.filter((l) => l.counted !== null && diffOf(l) !== 0);
+    const all = count.lines.filter((l) => l.counted !== null && diffOf(l) !== 0);
+    // สินค้าต้องอนุมัติ: ถ้าผู้ปิดรอบไม่ใช่หัวหน้า ส่วนต่างรอหัวหน้า ไม่ปรับยอดตรงนี้ (PD-AC8)
+    const held = (l) => actor.role !== 'head' && state.products.find((p) => p.id === l.productId).needsApproval;
+    const changed = all.filter((l) => !held(l));
     let adjust = null;
     // ตรวจส่วนต่างติดลบทุกบรรทัดก่อนแตะยอด จะได้ไม่ค้างครึ่งทาง
     for (const l of changed) {
@@ -491,10 +498,11 @@
       state.docs.push(adjust);
       for (const l of changed) if (diffOf(l) > 0) Domain.reserveForWaiting(state, l.productId, count.whId);
     }
-    Domain.log(state, actor, 'count.close', count.id, 'ปิดรอบนับ ปรับ ' + changed.length + ' รายการ');
+    const pending = all.filter(held).map((l) => Domain.queueCountDiff(state, count, l, diffOf(l), actor));
+    Domain.log(state, actor, 'count.close', count.id, 'ปิดรอบนับ ปรับ ' + changed.length + ' รายการ' + (pending.length ? ` รอหัวหน้า ${pending.length}` : ''));
     state.warehouses.find((w) => w.id === count.whId).countId = null;
     count.status = 'closed';
-    return { count, adjust };
+    return { count, adjust, pending };
   }
 
   function cancelCount(state, countId, actor) {
