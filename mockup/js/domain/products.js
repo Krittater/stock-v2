@@ -110,7 +110,7 @@
     const { id: _id, photos: _ph, active: _ac, ...rest } = patch;
     const ch = {};
     for (const [k, raw] of Object.entries(rest)) {
-      const v = BOOL.has(k) ? !!raw : typeof raw === 'string' ? raw.trim() : raw;
+      const v = BOOL.has(k) ? !!raw : typeof raw === 'string' ? (k === 'name' ? raw.trim().replace(/\s+/g, ' ') : raw.trim()) : raw;
       const cur = BOOL.has(k) ? !!p[k] : p[k];
       if (v !== cur && !(v === '' && cur == null)) ch[k] = v;
     }
@@ -126,6 +126,9 @@
     if ((('unit' in ch) || ('isRoll' in ch)) && (stockAnywhere(state, id) > 0 || hasHistory(state, id)))
       throw new DomainError('unit_locked', 'เปลี่ยนหน่วยไม่ได้ เพราะมีของหรือมีประวัติแล้ว');
     if (next.isRoll && next.unit !== 'เมตร') throw new DomainError('roll_unit', 'สายม้วนต้องใช้หน่วยเมตร');
+    if ('buyUnit' in ch && !ch.buyUnit) { ch.buyUnit = next.unit; if (ch.buyUnit === p.buyUnit) delete ch.buyUnit; } // ว่าง = ใช้หน่วยหลัก
+    // ย้ายเข้าหมวดที่ต้องอนุมัติ = ติ๊กตาม; ย้ายออกไม่ปลด (เหมือนตอนติ๊กหมวด)
+    if ('categoryId' in ch && catApproval(state, ch.categoryId) && !p.needsApproval) ch.needsApproval = true;
     checkNums(next, [...Object.keys(ch), ...('isRoll' in ch ? ['rollSize'] : [])]);
     const keys = Object.keys(ch);
     if (!keys.length) return p;
@@ -140,6 +143,10 @@
     const p = productOf(state, id);
     if (!active) {
       // ของกันไว้ให้ใบเบิกอยู่ในยอดจริงเสมอ ถ้ายอดเป็น 0 จึงไม่มีของกันค้าง
+      const pend = state.docs.find((d) => d.type === 'receive' && d.status === 'pending' && d.lines.some((l) => l.productId === id));
+      if (pend) throw new DomainError('prod_pending', `เลิกใช้ไม่ได้ ใบรับ ${pend.id} ยังรอยืนยัน`);
+      const pr = state.prs.find((r) => r.status === 'open' && r.productId === id);
+      if (pr) throw new DomainError('prod_pending', `เลิกใช้ไม่ได้ รายการต้องซื้อ ${pr.id} ยังเปิดอยู่`);
       const left = stockAnywhere(state, id);
       if (left > 0) throw new DomainError('prod_has_stock', `เลิกใช้ไม่ได้ ยังมีของเหลือ ${formatQty(left, p.unit)} ต้องใช้หรือปรับยอดให้เป็น 0 ก่อน`);
     }

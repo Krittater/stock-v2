@@ -451,7 +451,7 @@
     const cats = categoryId ? descendantIds(state, categoryId) : null;
     const count = {
       id: nextId(state, 'CC'), whId, categoryId: categoryId ?? null, status: 'open', by: actor.id, at: new Date().toISOString(),
-      lines: state.products.filter((p) => !cats || cats.has(p.categoryId))
+      lines: state.products.filter((p) => p.active !== false && (!cats || cats.has(p.categoryId)))
         .map((p) => ({ productId: p.id, system: qtyOf(state, p.id, whId), counted: null })),
     };
     state.counts.push(count);

@@ -155,8 +155,53 @@ test('initial stock: engineer pending, store posted, rolls by length, bad initia
   assert.equal(e.receipt.status, 'pending'); assert.equal(D.qtyOf(b.s, e.product.id, 'W-BN'), 0);
   const r = D.addProduct(b.s, { name: 'สายตั้งต้น', unit: 'เมตร', isRoll: true, categoryId: b.cat, initial: { whId: 'W-BN', rollLengths: [100, 40] } }, b.store);
   assert.equal(D.qtyOf(b.s, r.product.id, 'W-BN'), 140); assert.equal(r.receipt.status, 'posted');
-  const n = b.s.products.length, pc = b.s.counters.P;
+  const n = b.s.products.length, pc = b.s.counters.P, nd = b.s.docs.length, rc = b.s.counters.RC, na = b.s.audit.length;
   for (const initial of [{ whId: 'W-BN', qty: 0 }, { whId: 'W-BN', qty: 1.5 }, { whId: 'W-BN', shelf: 'ไม่มี', qty: 1 }, { whId: 'nope', qty: 1 }])
     assert.throws(() => D.addProduct(b.s, { name: 'พัง', unit: 'ตัว', categoryId: b.cat, initial }, b.store), D.DomainError);
   assert.equal(b.s.products.length, n); assert.equal(b.s.counters.P, pc);
+  assert.equal(b.s.docs.length, nd); assert.equal(b.s.counters.RC, rc); assert.equal(b.s.audit.length, na);
+});
+test('fix1: inactive products get no count line', () => {
+  const b = base(); const p = mk(b);
+  D.setProductActive(b.s, p.id, false, b.head);
+  const c = D.startCount(b.s, { whId: 'W-BN' }, b.head);
+  assert.ok(!c.lines.some((l) => l.productId === p.id));
+  assert.ok(c.lines.length > 0);
+});
+test('fix2: deactivate refused while a pending receipt or open PR references it', () => {
+  const b = base(); const p = mk(b);
+  const doc = D.receive(b.s, { whId: 'W-BN', lines: [{ productId: p.id, qty: 2 }] }, b.eng);
+  assert.throws(() => D.setProductActive(b.s, p.id, false, b.head), msg(`เลิกใช้ไม่ได้ ใบรับ ${doc.id} ยังรอยืนยัน`));
+  D.confirmReceipt(b.s, doc.id, b.store, false);
+  const q = mk(b); b.s.prs.push({ id: 'PR-X1', productId: q.id, whId: 'W-BN', qty: 1, received: 0, status: 'open' });
+  assert.throws(() => D.setProductActive(b.s, q.id, false, b.head), msg('เลิกใช้ไม่ได้ รายการต้องซื้อ PR-X1 ยังเปิดอยู่'));
+  b.s.prs[b.s.prs.length - 1].status = 'done';
+  assert.equal(D.setProductActive(b.s, q.id, false, b.head).active, false);
+});
+test('fix3: update normalises name, buyUnit default, category move ticks approval', () => {
+  const b = base(); const p = mk(b);
+  assert.equal(D.updateProduct(b.s, p.id, { name: '  ชื่อ   ใหม่  ' }, b.head).name, 'ชื่อ ใหม่');
+  assert.equal(D.updateProduct(b.s, p.id, { buyUnit: 'ลัง' }, b.head).buyUnit, 'ลัง');
+  assert.equal(D.updateProduct(b.s, p.id, { buyUnit: '' }, b.head).buyUnit, 'ตัว');
+  const cats = b.s.categories.filter((c) => c.parentId);
+  const to = cats.find((c) => c.id !== p.categoryId);
+  b.s.categories.find((c) => c.id === to.parentId).needsApproval = true; // หมวดแม่ติ๊ก
+  assert.equal(p.needsApproval, false);
+  assert.equal(D.updateProduct(b.s, p.id, { categoryId: to.id }, b.head).needsApproval, true);
+  D.updateProduct(b.s, p.id, { categoryId: b.cat }, b.head);
+  assert.equal(p.needsApproval, true); // ย้ายออกไม่ปลด
+});
+test('fix4: hasHistory via return, count line, PR; roll length blocks deactivate', () => {
+  const b = base();
+  const r = mk(b); assert.equal(D.hasHistory(b.s, r.id), false);
+  D.returnLoose(b.s, { productId: r.id, whId: 'W-BN', qty: 1, condition: 'ok', reason: 'ทดสอบ' }, b.head);
+  assert.equal(D.hasHistory(b.s, r.id), true);
+  const c = mk(b); b.s.counts.push({ id: 'CC-X', lines: [{ productId: c.id, system: 0, counted: null }] });
+  assert.equal(D.hasHistory(b.s, c.id), true);
+  const q = mk(b); b.s.prs.push({ id: 'PR-X2', productId: q.id, whId: 'W-BN', qty: 1, received: 0, status: 'done' });
+  assert.equal(D.hasHistory(b.s, q.id), true);
+  const roll = mk(b, { unit: 'เมตร', isRoll: true });
+  b.s.rolls.push({ id: 'R-X', productId: roll.id, whId: 'W-A', shelf: 'ทั่วไป', length: 7, opened: false, batch: '', fromRollId: null });
+  D.touchRolls(b.s);
+  assert.throws(() => D.setProductActive(b.s, roll.id, false, b.head), (e) => e.code === 'prod_has_stock' && e.message.includes('7'));
 });
