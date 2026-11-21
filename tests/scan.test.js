@@ -34,3 +34,11 @@ test('parseScan: ไม่สนตัวพิมพ์/ช่องว่า�
   assert.deepEqual(D.parseScan(st, 'bc-111'), { kind: 'product', id: 'P-0001' });
   assert.deepEqual(D.parseScan(st, 'j-25-010'), { kind: 'job', id: 'J-25-010' });
 });
+
+test('parseScan: kinds ระบุแล้ว prefix ที่ไม่อยู่ใน kinds ตกไปหา vendorCode สินค้า', () => {
+  const s2 = { ...st, rolls: [{ id: 'R-000001' }], products: [{ id: 'P-1', code: 'X1', vendorCode: 'R-000001', active: true }, { id: 'P-2', code: 'X2', vendorCode: 'J-25-010', active: true }, { id: 'P-3', code: 'X3', vendorCode: 'REQ-690001', active: true }] };
+  assert.deepEqual(D.parseScan(s2, 'R-000001'), { kind: 'roll', id: 'R-000001' });
+  assert.deepEqual(D.parseScan(s2, 'R-000001', ['product']), { kind: 'product', id: 'P-1' });
+  assert.deepEqual(D.parseScan(s2, 'J-25-010', ['product']), { kind: 'product', id: 'P-2' });
+  assert.deepEqual(D.parseScan(s2, 'REQ-690001', ['product']), { kind: 'product', id: 'P-3' });
+});

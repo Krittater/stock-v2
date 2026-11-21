@@ -17,15 +17,17 @@
       const input = ref();
       let stream = null;
       let timer = null;
+      let session = 0; // นับทุกครั้งที่เปิด/ปิด/ถอด: งานกล้องที่ค้างอยู่เช็คเลขนี้หลังทุก await
 
       const stopCamera = () => {
+        session++;
         clearInterval(timer); timer = null;
         if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
         if (video.value) video.value.srcObject = null;
       };
 
       const submit = (raw) => {
-        const r = Domain.parseScan(AppState.state, raw ?? code.value);
+        const r = Domain.parseScan(AppState.state, raw ?? code.value, props.kinds);
         if (r && props.kinds.includes(r.kind)) { open.value = false; emit('found', r); return; }
         error.value = 'ไม่พบ' + props.kinds.map((k) => NOUN[k]).join('/') + 'จากรหัสนี้';
       };
@@ -33,21 +35,31 @@
       const startCamera = async () => {
         hasCamera.value = 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
         if (!hasCamera.value) return;
+        const my = session;
+        let s;
         try {
-          const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-          if (!open.value) { s.getTracks().forEach((t) => t.stop()); return; } // ปิดกล่องระหว่างรอขอสิทธิ์กล้อง
+          s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          if (my !== session) { s.getTracks().forEach((t) => t.stop()); return; } // ปิด/เปิดใหม่/ถอดระหว่างรอสิทธิ์กล้อง
           stream = s;
           await nextTick();
+          if (my !== session) return;
           video.value.srcObject = s;
           await video.value.play().catch(() => {});
+          if (my !== session) return;
           const det = new BarcodeDetector();
+          let busy = false;
           timer = setInterval(async () => {
+            if (busy) return;
+            busy = true;
             try {
               const hit = (await det.detect(video.value))[0];
-              if (hit && hit.rawValue) { code.value = hit.rawValue; submit(hit.rawValue); }
+              if (my === session && hit && hit.rawValue) { code.value = hit.rawValue; submit(hit.rawValue); }
             } catch (e) { /* เฟรมยังไม่พร้อม */ }
+            busy = false;
           }, 400);
         } catch (e) {
+          if (my !== session) { if (s) s.getTracks().forEach((t) => t.stop()); return; }
+          if (stream) stopCamera();
           camNote.value = 'เปิดกล้องไม่ได้ พิมพ์รหัสแทนได้';
         }
       };
