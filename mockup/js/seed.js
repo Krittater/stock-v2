@@ -129,25 +129,29 @@
       { id: 'U-STORE', name: 'ก้องภพ แสงทอง', title: 'Store', role: 'store' },
       { id: 'U-HEAD', name: 'อรุณ รัตนชัย', title: 'หัวหน้า', role: 'head' },
     ];
+    // ชั้นทุกคลังเหมือนกัน; W-B เลิกใช้ C-01
+    const shelvesFor = (whId) => [
+      'ทั่วไป', 'A-01', 'A-02', 'A-03', 'B-01', 'B-02', 'B-03', 'C-01',
+    ].map((code) => ({ code, active: !(whId === 'W-B' && code === 'C-01') })).concat([{ code: 'QC', active: true, qc: true }]);
     const warehouses = [
-      { id: 'W-BN', name: 'คลังหลัก บางนา', location: 'บางนา กรุงเทพฯ', countId: null },
-      { id: 'W-A', name: 'คลังไซต์งาน A', location: 'มาบตาพุด ระยอง', countId: null },
-      { id: 'W-B', name: 'คลังไซต์งาน B', location: 'อมตะซิตี้ ชลบุรี', countId: null },
-      { id: 'W-C', name: 'คลังไซต์งาน C', location: 'ไซต์งาน C', countId: null },
-    ];
+      { id: 'W-BN', name: 'คลังหลัก บางนา', location: 'บางนา กรุงเทพฯ' },
+      { id: 'W-A', name: 'คลังไซต์งาน A', location: 'มาบตาพุด ระยอง' },
+      { id: 'W-B', name: 'คลังไซต์งาน B', location: 'อมตะซิตี้ ชลบุรี' },
+      { id: 'W-C', name: 'คลังไซต์งาน C', location: 'ไซต์งาน C' },
+    ].map((w) => ({ ...w, countId: null, shelves: shelvesFor(w.id) }));
 
     const categories = [];
     const nextCatId = () => 'C-' + pad(categories.length + 1, 3);
     const topIds = {};
     TOPS.forEach(([name, icon, color], i) => {
       topIds[name] = nextCatId();
-      categories.push({ id: topIds[name], name, parentId: null, icon, color, order: i + 1, image: CAT_IMAGE[name] });
+      categories.push({ id: topIds[name], name, parentId: null, icon, color, order: i + 1, image: CAT_IMAGE[name], needsApproval: false });
     });
     const subIds = {};
     SUBS.forEach((sd, i) => {
       const parent = categories.find((c) => c.id === topIds[sd[0]]);
       subIds[sd[1]] = nextCatId();
-      categories.push({ id: subIds[sd[1]], name: sd[1], parentId: parent.id, icon: parent.icon, color: parent.color, order: i + 1, image: CAT_IMAGE[sd[1]] });
+      categories.push({ id: subIds[sd[1]], name: sd[1], parentId: parent.id, icon: parent.icon, color: parent.color, order: i + 1, image: CAT_IMAGE[sd[1]], needsApproval: false });
     });
 
     // คอมโบ ขนาด × สี × ยี่ห้อ ต่อหมวดย่อย → สลับลำดับ → แจกวนทีละหมวด (ลำดับไม่ขึ้นกับ n)
@@ -169,10 +173,17 @@
       return opts[ri(0, opts.length - 1)];
     };
 
+    const catName = Object.fromEntries(SUBS.map((sd) => [subIds[sd[1]], sd[0]]));
     const products = [];
     const bnQty = []; // ยอด W-BN ที่กำหนดตายตัว (null = ตามกฎ)
     const add = (p, bn) => {
-      products.push({ id: 'P-' + pad(products.length + 1, 4), ...p, createdAt: iso(products.length % 300), image: null });
+      // สายไฟ/สายสื่อสารหน่วยเมตร = สายม้วน (LAN ม้วน 305 ม. ที่เหลือ 100 ม.)
+      const roll = p.unit === 'เมตร' && ['สายไฟ', 'สายสื่อสาร'].includes(catName[p.categoryId]);
+      products.push({
+        id: 'P-' + pad(products.length + 1, 4), ...p, createdAt: iso(products.length % 300), image: null,
+        isRoll: roll, rollSize: roll ? (catName[p.categoryId] === 'สายสื่อสาร' && p.model.includes('CAT') ? 305 : 100) : 100, scrapMin: roll ? 3 : 0,
+        active: true, needsApproval: false, vendorCode: '', note: '', buyUnit: p.unit, buyFactor: 1, photos: [],
+      });
       bnQty.push(bn);
     };
     FIXED.slice(0, n).forEach((f) => add({ code: f[0], name: f[1], brand: f[3], model: f[4], unit: f[5], categoryId: subIds[f[2]], reorderPoint: f[7] }, f[6]));
@@ -187,7 +198,14 @@
       if (!progressed) throw new Error('seed: combo pool exhausted at ' + products.length);
     }
 
-    const stock = {};
+    const stock = {}, rolls = [];
+    // ยอดเมตรของสายม้วนแตกเป็นม้วนตาม rollSize เศษเป็นม้วนสั้น 1 ม้วน (ยอดรวมต่อสินค้าเท่าเดิม)
+    const put = (p, whId, qty) => {
+      if (!p.isRoll) { stock[`${p.id}|${whId}|ทั่วไป`] = qty; return; }
+      for (let left = qty; left > 0; left -= p.rollSize) {
+        rolls.push({ id: 'R-' + pad(rolls.length + 1, 6), productId: p.id, whId, shelf: 'ทั่วไป', length: Math.min(p.rollSize, left), opened: false, batch: '', fromRollId: null });
+      }
+    };
     products.forEach((p, i) => {
       const num = i + 1, rp = p.reorderPoint;
       let bn = bnQty[i];
@@ -196,8 +214,8 @@
         else if (LOW_EXTRA.includes(num)) bn = ri(1, rp);
         else bn = rp + ri(1, rp * 4);
       }
-      if (bn > 0) stock[`${p.id}|W-BN`] = bn;
-      for (const w of ['W-A', 'W-B', 'W-C']) if (rng() < 0.4) stock[`${p.id}|${w}`] = ri(1, rp * 2);
+      if (bn > 0) put(p, 'W-BN', bn);
+      for (const w of ['W-A', 'W-B', 'W-C']) if (rng() < 0.4) put(p, w, ri(1, rp * 2));
     });
 
     const jobs = [
@@ -207,7 +225,7 @@
       { id: 'J-24-012', name: 'ติดตั้งตู้ MDB อาคารสำนักงานใหญ่', customer: 'บจก. สยามพร็อพเพอร์ตี้', open: true },
       { id: 'J-24-031', name: 'ติดตั้งระบบไฟฟ้า อาคาร A โครงการริเวอร์ไซด์', customer: 'บจก. ริเวอร์ไซด์ ดีเวลลอปเมนท์', open: true },
       { id: 'J-24-008', name: 'ปรับปรุงห้องควบคุม โรงงาน C', customer: 'บจก. อีสเทิร์น ฟู้ดส์', open: false },
-    ];
+    ].map((j) => ({ ...j, ownerId: null, site: '', start: null, due: null, closedAt: null, note: '' }));
     const openJobs = jobs.filter((j) => j.open);
 
     // เอกสารใช้สูตรคงที่ (ไม่ใช้ rng) และอ้างเฉพาะ P-0001..P-0040 เพื่อให้ products:50 ใช้ได้
@@ -239,11 +257,11 @@
     });
 
     return {
-      version: 1,
-      counters: { P: products.length, REQ: POSTED_ISSUE + PENDING, PR: prs.length, RC: RECEIVE, CC: 0, ADJ: 0, J: 0, C: categories.length },
-      settings: { requireApproval: false },
+      version: 3,
+      counters: { P: products.length, REQ: POSTED_ISSUE + PENDING, PR: prs.length, RC: RECEIVE, CC: 0, ADJ: 0, J: 0, C: categories.length, RT: 0, R: rolls.length },
+      settings: { requireApproval: false, openingLocked: false },
       currentUserId: 'U-ENG',
-      users, warehouses, categories, products, stock, jobs, docs, prs, counts: [],
+      users, warehouses, categories, products, stock, rolls, jobs, docs, prs, counts: [], returns: [], notifs: [], audit: [],
       cart: { lines: [{ productId: 'P-0001', qty: 100 }, { productId: 'P-0002', qty: 10 }, { productId: 'P-0003', qty: 30 }], whId: 'W-BN', jobId: 'J-25-010', note: '' },
     };
   }

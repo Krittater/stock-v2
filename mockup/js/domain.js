@@ -21,8 +21,51 @@
     }
   }
 
-  const stockKey = (productId, whId) => `${productId}|${whId}`;
-  const qtyOf = (state, productId, whId) => state.stock[stockKey(productId, whId)] || 0;
+  const DEFAULT_SHELF = 'ทั่วไป';
+  const stockKey = (productId, whId, shelf = DEFAULT_SHELF) => `${productId}|${whId}|${shelf}`;
+  const shelfList = (state, whId) => {
+    const w = state.warehouses.find((x) => x.id === whId);
+    return (w && w.shelves) || [{ code: DEFAULT_SHELF, active: true }];
+  };
+  // ชั้นที่ไม่ใช่ชั้นรอตรวจ (รวมชั้นที่เลิกใช้แล้ว เพราะของอาจยังค้าง) / รหัสชั้นรอตรวจ
+  const plainShelves = (state, whId) => shelfList(state, whId).filter((s) => !s.qc).map((s) => s.code);
+  const qcCodes = (state, whId) => shelfList(state, whId).filter((s) => s.qc).map((s) => s.code);
+  const qcShelf = (state, whId) => shelfList(state, whId).find((s) => s.qc) || null;
+  // ชั้นที่เลือกวางของได้ (เปิดอยู่); qc: true รวมชั้นรอตรวจ
+  const shelves = (state, whId, { qc = false } = {}) =>
+    shelfList(state, whId).filter((s) => s.active !== false && (qc || !s.qc)).map((s) => s.code);
+
+  // ดัชนีม้วนต่อสินค้า (kpis/รายการสินค้าเรียก qtyOf ทีละสินค้า ถ้าไล่ทุกม้วนจะช้า) — สร้างใหม่เมื่อจำนวนม้วนหรือ rollRev เปลี่ยน
+  // ผู้ที่เพิ่ม/ลบม้วนต้องเรียก touchRolls(state); แก้ r.length ตรง ๆ ไม่ต้อง
+  const NO_ROLLS = [];
+  const rollIdx = new WeakMap();
+  const touchRolls = (state) => { state.rollRev = (state.rollRev || 0) + 1; };
+  function rollsOfProduct(state, productId) {
+    const rs = state.rolls;
+    if (!rs || !rs.length) return NO_ROLLS;
+    const sig = rs.length + ':' + (state.rollRev || 0);
+    let e = rollIdx.get(rs);
+    if (!e || e.sig !== sig) {
+      e = { sig, map: new Map() };
+      for (const r of rs) { let a = e.map.get(r.productId); if (!a) e.map.set(r.productId, (a = [])); a.push(r); }
+      rollIdx.set(rs, e);
+    }
+    return e.map.get(productId) || NO_ROLLS;
+  }
+
+  const qtyAt = (state, productId, whId, shelf = DEFAULT_SHELF) => {
+    let t = state.stock[stockKey(productId, whId, shelf)] || 0;
+    for (const r of rollsOfProduct(state, productId)) if (r.whId === whId && r.shelf === shelf) t += r.length;
+    return +t.toFixed(2);
+  };
+  // ยอดที่ใช้ได้จริง = ทุกชั้นยกเว้นชั้นรอตรวจ (รวมความยาวม้วน)
+  const qtyOf = (state, productId, whId) => {
+    let t = 0;
+    for (const code of plainShelves(state, whId)) t += state.stock[stockKey(productId, whId, code)] || 0;
+    const qc = qcCodes(state, whId);
+    for (const r of rollsOfProduct(state, productId)) if (r.whId === whId && !qc.includes(r.shelf)) t += r.length;
+    return +t.toFixed(2);
+  };
   const totalQty = (state, productId) =>
     state.warehouses.reduce((sum, w) => sum + qtyOf(state, productId, w.id), 0);
 
@@ -36,6 +79,7 @@
   const ID_FORMAT = {
     P: ['P-', '', 4], REQ: ['REQ-', '69', 4], PR: ['PR-', '69', 4], RC: ['RC-', '69', 4],
     CC: ['CC-', '', 4], ADJ: ['ADJ-', '69', 4], J: ['J-26-', '', 3], C: ['C-', '', 3],
+    RT: ['RT-', '69', 4], R: ['R-', '', 6],
   };
   function nextId(state, kind) {
     const [prefix, year, digits] = ID_FORMAT[kind];
@@ -54,7 +98,7 @@
     if (!raw) return null;
     try {
       const s = JSON.parse(raw);
-      return s && s.version === 1 ? s : null;
+      return s && s.version === 3 ? s : null;
     } catch (e) {
       return null;
     }
@@ -212,21 +256,33 @@
     return { movedProducts: prods.length };
   }
 
-  function similarByName(items, name) {
+  // ponytail: Dice บน bigram พอสำหรับเตือนชื่อคล้าย ถ้าต้องแม่นกว่านี้ค่อยเปลี่ยนเป็น trigram/ตัดคำไทย
+  function similarity(a, b) {
+    const grams = (x) => { const t = norm(x).replace(/ /g, ''); const g = []; for (let i = 0; i < t.length - 1; i++) g.push(t.slice(i, i + 2)); return g; };
+    const A = grams(a), B = grams(b);
+    if (!A.length || !B.length) return 0;
+    const pool = B.slice(); let hit = 0;
+    for (const g of A) { const i = pool.indexOf(g); if (i >= 0) { hit++; pool.splice(i, 1); } }
+    return (2 * hit) / (A.length + B.length);
+  }
+  // คืนรายการที่คล้าย (ไม่รวมชื่อเดียวกันเป๊ะ) เรียงจากคล้ายสุด ไม่เกิน 5
+  function similarByName(items, name, min) {
     const q = norm(name);
     if (q.length < 3) return [];
-    return items.filter((p) => {
-      const n = norm(p.name);
-      return n !== q && n.length >= 3 && (n.includes(q) || q.includes(n));
-    }).slice(0, 5);
+    return items.filter((p) => norm(p.name) !== q && norm(p.name).length >= 3)
+      .map((p) => [p, similarity(p.name, name)]).filter((x) => x[1] >= min)
+      .sort((a, b) => b[1] - a[1]).slice(0, 5).map((x) => x[0]);
   }
-  const findSimilar = (state, name) => similarByName(state.products, name);
-  const similarJobs = (state, name) => similarByName(state.jobs.filter((j) => j.open), name);
+  const findSimilar = (state, name) => similarByName(state.products, name, 0.35);
+  const similarJobs = (state, name) => similarByName(state.jobs.filter((j) => j.open), name, 0.45);
 
   function addJob(state, { name, customer } = {}) {
     const n = String(name ?? '').trim().replace(/\s+/g, ' ');
     if (!n) throw new DomainError('job_name', 'ใส่ชื่องานก่อน');
-    const job = { id: nextId(state, 'J'), name: n, customer: customer || '', open: true };
+    const job = {
+      id: nextId(state, 'J'), name: n, customer: customer || '', open: true,
+      ownerId: null, site: '', start: null, due: null, closedAt: null, note: '',
+    };
     state.jobs.push(job);
     return job;
   }
@@ -252,8 +308,12 @@
       id, code: code || id, name: String(input.name).trim(), brand: input.brand || '', model: input.model || '',
       unit: input.unit, categoryId: input.categoryId, reorderPoint: input.reorderPoint ?? 0,
       image: input.image ?? null, createdAt: new Date().toISOString(),
+      isRoll: !!input.isRoll, rollSize: input.rollSize || 100, scrapMin: input.isRoll ? (input.scrapMin ?? 3) : 0,
+      active: true, needsApproval: !!input.needsApproval, vendorCode: input.vendorCode || '', note: input.note || '',
+      buyUnit: input.buyUnit || input.unit, buyFactor: input.buyFactor || 1, photos: [],
     };
     state.products.push(product);
+    Domain.log(state, actor, 'product.add', id, 'สร้างสินค้า ' + product.name);
     const receipt = ini ? receive(state, { whId: ini.whId, lines: [{ productId: id, qty: ini.qty }] }, actor) : null;
     return { product, receipt };
   }
@@ -265,13 +325,13 @@
     if (pr.received >= pr.qty) pr.status = 'done';
   }
 
-  function postReceipt(state, doc) {
+  function postReceipt(state, doc, actor) {
     for (const l of doc.lines) {
-      const k = stockKey(l.productId, doc.whId);
-      state.stock[k] = (state.stock[k] || 0) + l.qty;
+      Domain.putStock(state, { productId: l.productId, whId: doc.whId, shelf: l.shelf, qty: l.qty, rollLengths: l.rollLengths, batch: l.batch });
       const pr = l.prId && state.prs.find((r) => r.id === l.prId);
       if (pr) applyPR(state, pr, l.qty);
     }
+    Domain.log(state, actor, 'receive', doc.id, 'รับของเข้าคลัง ' + doc.whId);
   }
 
   function receive(state, input, actor) {
@@ -292,7 +352,7 @@
       id: nextId(state, 'RC'), type: 'receive', status: actor.role === 'engineer' ? 'pending' : 'posted', whId,
       lines: lines.map((l) => ({ ...l })), note: note ?? '', by: actor.id, at: new Date().toISOString(),
     };
-    if (doc.status === 'posted') postReceipt(state, doc);
+    if (doc.status === 'posted') postReceipt(state, doc, actor);
     state.docs.push(doc);
     return doc;
   }
@@ -301,7 +361,7 @@
     if (actor.role === 'engineer') throw new DomainError('forbidden', 'บัญชีนี้ยืนยันยอดไม่ได้ ให้ Store หรือหัวหน้ายืนยัน');
     const doc = state.docs.find((d) => d.id === docId);
     if (!doc || doc.type !== 'receive' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
-    if (accept) { assertWarehouseOpen(state, doc.whId); postReceipt(state, doc); }
+    if (accept) { assertWarehouseOpen(state, doc.whId); postReceipt(state, doc, actor); }
     doc.status = accept ? 'posted' : 'rejected';
     return doc;
   }
@@ -309,15 +369,12 @@
   const needsApproval = (state, actor) => !!state.settings.requireApproval && actor.role !== 'head';
 
   // ตัดยอดตามที่มีจริง ส่วนขาดเปิด PR; ตรวจครบแล้วก่อนเรียก จึงไม่ throw กลางทาง
-  function postIssue(state, doc) {
+  function postIssue(state, doc, actor) {
     const prs = [];
     let short = 0, got = 0;
     for (const l of doc.lines) {
-      const k = stockKey(l.productId, doc.whId);
-      const have = state.stock[k] || 0;
-      l.issued = Math.min(l.qty, have);
-      state.stock[k] = have - l.issued;
-      if (l.issued > 0) got++;
+      l.issued = Math.min(l.qty, qtyOf(state, l.productId, doc.whId));
+      if (l.issued > 0) { const o = Domain.stockOut(state, { productId: l.productId, whId: doc.whId, qty: l.issued }); l.cuts = o.cuts; l.shelves = o.shelves; got++; }
       if (l.issued < l.qty) {
         short++;
         const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: doc.whId, qty: +(l.qty - l.issued).toFixed(2), received: 0, status: 'open', reqId: doc.id };
@@ -325,6 +382,7 @@
       }
     }
     doc.status = 'posted';
+    Domain.log(state, actor, 'issue', doc.id, 'เบิกของ ' + doc.lines.length + ' รายการ');
     return { doc, outcome: !short ? 'full' : got ? 'partial' : 'waiting', prs };
   }
 
@@ -348,7 +406,7 @@
       at: new Date().toISOString(), prIds: [],
     };
     state.docs.push(doc);
-    return pending ? { doc, outcome: 'pending', prs: [] } : postIssue(state, doc);
+    return pending ? { doc, outcome: 'pending', prs: [] } : postIssue(state, doc, actor);
   }
 
   function approveIssue(state, docId, actor, approve) {
@@ -357,10 +415,10 @@
     if (!doc || doc.type !== 'issue' || doc.status !== 'pending') throw new DomainError('doc_not_pending', 'เอกสารนี้ไม่ได้รอยืนยัน');
     if (!approve) { doc.status = 'rejected'; return { doc, outcome: 'rejected', prs: [] }; }
     assertWarehouseOpen(state, doc.whId);
-    return postIssue(state, doc);
+    return postIssue(state, doc, actor);
   }
 
-  function updateProduct(state, id, patch) {
+  function updateProduct(state, id, patch, actor) {
     const p = state.products.find((x) => x.id === id);
     if (!p) throw new DomainError('prod_missing', 'ไม่พบสินค้านี้');
     const { id: _ignored, ...rest } = patch;
@@ -368,7 +426,9 @@
     if ('name' in rest) next.name = String(rest.name).trim();
     checkProduct(state, next, id);
     if ('code' in rest) { next.code = String(rest.code ?? '').trim() || id; checkCode(state, next.code, id); }
-    return Object.assign(p, next);
+    Object.assign(p, next);
+    Domain.log(state, actor, 'product.update', id, 'แก้ไขสินค้า ' + p.name);
+    return p;
   }
 
   const diffOf = (l) => +(l.counted - l.system).toFixed(2);
@@ -429,8 +489,15 @@
         note: 'ปรับยอดจากรอบนับ ' + count.id, by: actor.id, at: new Date().toISOString(),
       };
       state.docs.push(adjust);
-      changed.forEach((l) => { state.stock[stockKey(l.productId, count.whId)] = l.counted; });
+      for (const l of changed) {
+        const d = diffOf(l);
+        if (d > 0) {
+          const roll = state.products.find((p) => p.id === l.productId).isRoll;
+          Domain.putStock(state, { productId: l.productId, whId: count.whId, qty: d, rollLengths: roll ? [d] : undefined, batch: 'จากการนับ' });
+        } else Domain.stockOut(state, { productId: l.productId, whId: count.whId, qty: -d });
+      }
     }
+    Domain.log(state, actor, 'count.close', count.id, 'ปิดรอบนับ ปรับ ' + changed.length + ' รายการ');
     state.warehouses.find((w) => w.id === count.whId).countId = null;
     count.status = 'closed';
     return { count, adjust };
@@ -445,7 +512,8 @@
   }
 
   const Domain = {
-    DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyOf, totalQty,
+    DomainError, unitAbbr, formatQty, validateQty, stockKey, qtyAt, qtyOf, totalQty,
+    shelves, plainShelves, qcCodes, qcShelf, similarity, touchRolls,
     stockStatus, nextId, currentUser, assertWarehouseOpen, parseSaved,
     categoryPath, descendantIds, searchProducts, tabCounts, kpis, warehouseOptions, imageOf, categoryImage,
     addCategory, updateCategory, deleteCategory, productCounts, findSimilar, addProduct, updateProduct,

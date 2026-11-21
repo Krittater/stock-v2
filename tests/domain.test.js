@@ -1,12 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const D = require('../mockup/js/domain.js');
+const D = require('./_load.js');
 const Seed = require('../mockup/js/seed.js');
 
+const SHELVES = () => [{ code: 'ทั่วไป', active: true }, { code: 'QC', active: true, qc: true }];
 function mini() {
   return {
-    version: 1,
-    counters: { P: 0, REQ: 0, PR: 0, RC: 0, CC: 0, ADJ: 0, J: 0, C: 0 },
+    version: 3,
+    counters: { P: 0, REQ: 0, PR: 0, RC: 0, CC: 0, ADJ: 0, J: 0, C: 0, RT: 0, R: 0 },
     settings: { requireApproval: false },
     currentUserId: 'U-1',
     users: [
@@ -15,12 +16,13 @@ function mini() {
       { id: 'U-3', name: 'วิศวกร', title: 'วิศวกรหน้างาน', role: 'engineer' },
     ],
     warehouses: [
-      { id: 'W-BN', name: 'คลังหลัก บางนา', location: 'บางนา', countId: null },
-      { id: 'W-A', name: 'คลัง A', location: 'A', countId: null },
+      { id: 'W-BN', name: 'คลังหลัก บางนา', location: 'บางนา', countId: null, shelves: SHELVES() },
+      { id: 'W-A', name: 'คลัง A', location: 'A', countId: null, shelves: SHELVES() },
     ],
     categories: [],
     products: [{ id: 'P-0001', code: 'P-0001', name: 'สายไฟ', brand: '', model: '', unit: 'เมตร', categoryId: null, reorderPoint: 100, createdAt: '2026-01-01T00:00:00.000Z', image: null }],
-    stock: { 'P-0001|W-BN': 1250, 'P-0001|W-A': 50 },
+    stock: { 'P-0001|W-BN|ทั่วไป': 1250, 'P-0001|W-A|ทั่วไป': 50 },
+    rolls: [], notifs: [], audit: [], returns: [],
     jobs: [], docs: [], prs: [], counts: [],
     cart: { lines: [], whId: 'W-BN', jobId: '', note: '' },
   };
@@ -46,7 +48,7 @@ test('qty and status', () => {
   assert.equal(D.stockStatus(s, p, 'W-BN'), 'in');
   assert.equal(D.stockStatus(s, p, 'W-A'), 'low');
   assert.equal(D.stockStatus(s, p, null), 'in');
-  s.stock['P-0001|W-A'] = 0; assert.equal(D.stockStatus(s, p, 'W-A'), 'out');
+  s.stock['P-0001|W-A|ทั่วไป'] = 0; assert.equal(D.stockStatus(s, p, 'W-A'), 'out');
 });
 test('nextId formats', () => {
   const s = mini();
@@ -76,7 +78,7 @@ test('parseSaved rejects garbage and old versions', () => {
   assert.equal(D.parseSaved('{bad'), null);
   assert.equal(D.parseSaved('null'), null);
   assert.equal(D.parseSaved('{"version":0}'), null);
-  assert.equal(D.parseSaved(JSON.stringify(mini())).version, 1);
+  assert.equal(D.parseSaved(JSON.stringify(mini())).version, 3);
 });
 
 const S = Seed.build();

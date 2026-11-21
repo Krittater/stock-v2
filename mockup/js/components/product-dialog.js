@@ -63,7 +63,7 @@
       };
       const save = () => {
         const patch = { name: f.name, brand: f.brand.trim(), model: f.model.trim(), code: f.code, categoryId: f.categoryId, unit: unit.value, reorderPoint: f.reorderPoint ?? 0 };
-        const p = act((s) => Domain.updateProduct(s, props.product.id, patch), (x) => `บันทึกแล้ว: ${x.name}`);
+        const p = act((s, u) => Domain.updateProduct(s, props.product.id, patch, u), (x) => `บันทึกแล้ว: ${x.name}`);
         if (p) { emit('saved', p); close(); }
       };
       const create = () => {

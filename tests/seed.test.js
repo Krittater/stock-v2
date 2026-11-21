@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const D = require('../mockup/js/domain.js');
+const D = require('./_load.js');
 const Seed = require('../mockup/js/seed.js');
 
 const s = Seed.build();
@@ -85,4 +85,36 @@ test('products:50 is valid and references only P-0001..P-0040', () => {
   for (const [id, k] of st) if (k !== 'in') assert.ok(ok(id), id);
   assert.equal(s50.docs.filter(d => d.type === 'issue' && d.status === 'pending').length, 7);
   assert.equal(s50.prs.length, 18);
+});
+
+test('v3 shape: shelves, rolls, new fields', () => {
+  assert.equal(s.version, 3);
+  for (const w of s.warehouses) {
+    assert.deepEqual(w.shelves.map(x => x.code), ['ทั่วไป', 'A-01', 'A-02', 'A-03', 'B-01', 'B-02', 'B-03', 'C-01', 'QC']);
+    assert.equal(w.shelves.find(x => x.qc).code, 'QC');
+    assert.equal(w.shelves.find(x => x.code === 'C-01').active, w.id !== 'W-B');
+  }
+  assert.ok(s.products.every(p => p.active === true && p.needsApproval === false && Array.isArray(p.photos) && p.buyFactor === 1));
+  assert.ok(s.categories.every(c => c.needsApproval === false));
+  assert.deepEqual([s.notifs, s.audit, s.returns], [[], [], []]);
+  assert.equal(s.settings.openingLocked, false);
+  assert.equal(s.counters.R, s.rolls.length); assert.equal(s.counters.RT, 0);
+  assert.ok(s.jobs.every(j => 'ownerId' in j && 'closedAt' in j && j.note === ''));
+});
+test('cable products are rolls; meter stock split into rolls with unchanged totals', () => {
+  const rollP = s.products.filter(p => p.isRoll);
+  assert.ok(rollP.length > 300 && rollP.every(p => p.unit === 'เมตร' && [100, 305].includes(p.rollSize) && p.scrapMin === 3));
+  assert.ok(s.products.filter(p => !p.isRoll).every(p => p.scrapMin === 0));
+  assert.equal(s.products.find(p => p.code === 'EL-LAN-CAT6').rollSize, 305);
+  assert.equal(s.products.find(p => p.id === 'P-0001').rollSize, 100);
+  assert.equal(s.products.find(p => p.id === 'P-0003').isRoll, false); // ท่อ EMT หน่วยเมตรแต่ไม่ใช่สายม้วน
+  assert.ok(s.rolls.every(r => r.length > 0 && r.length <= s.products.find(p => p.id === r.productId).rollSize));
+  assert.ok(Object.keys(s.stock).every(k => !s.products.find(p => p.id === k.split('|')[0]).isRoll));
+  // P-0001 W-BN 1250 = 12 ม้วน x 100 + 50
+  const p1 = s.rolls.filter(r => r.productId === 'P-0001' && r.whId === 'W-BN').map(r => r.length);
+  assert.deepEqual(p1, [...Array(12).fill(100), 50]);
+  // ยอดต่อสินค้าต่อคลังเท่ากับยอดเมตรเดิม (ก่อนแตกม้วน): ตรวจจากยอดรวมใน baseline ของ P-0001
+  assert.equal(D.totalQty(s, 'P-0001'), 1672);
+  assert.equal(D.totalQty(s, 'P-0012'), 484);
+  for (const r of s.rolls) assert.equal(r.shelf, 'ทั่วไป');
 });

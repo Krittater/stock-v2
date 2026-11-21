@@ -1,11 +1,11 @@
 // สถานะแอป (persist ลง localStorage), router แบบ hash, และ act() สำหรับเรียก Domain
 (function () {
   const { reactive, computed, watch, ref } = Vue;
-  const KEY = 'stockpro-mock-v2'; // v2: ข้อมูล v1 เก่ายังไม่มีรูปหมวด — เริ่มจาก seed ใหม่
+  const KEY = 'stockpro-mock-v3'; // v3: ยอดแยกชั้น/ม้วน — ข้อมูล v1/v2 เก่า shape ไม่ตรง เริ่มจาก seed ใหม่
   window.Pages = {};
 
   function load() {
-    try { localStorage.removeItem('stockpro-mock-v1'); return Domain.parseSaved(localStorage.getItem(KEY)); } catch (e) { return null; }
+    try { localStorage.removeItem('stockpro-mock-v1'); localStorage.removeItem('stockpro-mock-v2'); return Domain.parseSaved(localStorage.getItem(KEY)); } catch (e) { return null; }
   }
   const state = reactive(load() ?? Seed.build());
   if (!state.ui) state.ui = { dark: false };
