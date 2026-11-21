@@ -112,13 +112,14 @@ test('OS-G2 found stock for an existing product posts at once for store', () => 
   const r = D.submitOpening(b.s, { productId: 'P-0004', whId: W, qty: 4, kind: 'found' }, b.store);
   assert.equal(r.cc, null); assert.equal(D.qtyOf(b.s, 'P-0004', W), before + 4);
 });
-test('OS-G3 found may pick a shelf; opening always lands on ทั่วไป', () => {
+test('OS-G3 both kinds may pick a shelf (default ทั่วไป), never QC', () => {
   const b = base(); const a0 = D.qtyAt(b.s, 'P-0004', W, 'A-02');
   D.submitOpening(b.s, { productId: 'P-0004', whId: W, shelf: 'A-02', qty: 2, kind: 'found' }, b.store);
   assert.equal(D.qtyAt(b.s, 'P-0004', W, 'A-02'), a0 + 2);
   const p = mk(b).product;
   D.submitOpening(b.s, { productId: p.id, whId: W, shelf: 'A-02', qty: 2, kind: 'opening' }, b.store);
-  assert.equal(D.qtyAt(b.s, p.id, W, 'ทั่วไป'), 2); assert.equal(D.qtyAt(b.s, p.id, W, 'A-02'), 0);
+  assert.equal(D.qtyAt(b.s, p.id, W, 'A-02'), 2); assert.equal(D.qtyAt(b.s, p.id, W, 'ทั่วไป'), 0);
+  const q = mk(b, { initial: { whId: W, shelf: 'A-03', qty: 1 } }, b.store).product; assert.equal(D.qtyAt(b.s, q.id, W, 'A-03'), 1);
   assert.throws(() => D.submitOpening(b.s, { productId: p.id, whId: W, shelf: 'QC', qty: 2, kind: 'found' }, b.store), { code: 'shelf_invalid' });
 });
 test('OS-G4 CSV import: head only, locked, bypasses needsApproval', () => {
@@ -193,4 +194,73 @@ test('PD-AC8 count adjustments of needsApproval products wait for head', () => {
   assert.equal(up.diff, 2); D.confirmOpening(b.s, up.id, b.head, false, 'นับผิด');
   assert.equal(D.qtyOf(b.s, p.id, W), 7);
   run(5, b.head); assert.equal(D.qtyOf(b.s, p.id, W), 5);
+});
+
+test('fix2 coverage lost to FIFO reservation still opens a PR for the later doc', () => {
+  const b = base(); const p = mk(b).product;
+  const d0 = D.issue(b.s, { whId: W, jobId: JOB, lines: [{ productId: p.id, qty: 10 }] }, b.head);
+  assert.equal(d0.prs.length, 1);
+  const e = D.submitOpening(b.s, { productId: p.id, whId: W, qty: 10, kind: 'found' }, b.eng);
+  const d1 = D.issue(b.s, { whId: W, jobId: JOB, lines: [{ productId: p.id, qty: 10 }] }, b.head);
+  assert.equal(d1.prs.length, 0); assert.equal(d1.doc.lines[0].covered, 10);
+  D.confirmOpening(b.s, e.cc.id, b.store, true);
+  assert.equal(d0.doc.lines[0].reserved, 10);
+  const l = d1.doc.lines[0], prs = b.s.prs.filter((r) => r.reqId === d1.doc.id && r.status === 'open');
+  assert.equal(l.covered, 0); assert.equal(prs.reduce((a, r) => a + r.qty, 0), 10);
+  assert.ok(b.s.notifs.some((x) => x.to === b.head.id && x.text.includes(d1.doc.id)));
+});
+test('fix3 cancelled doc releases its coverage; a new doc is covered again', () => {
+  const b = base(); const p = mk(b).product;
+  const e = D.submitOpening(b.s, { productId: p.id, whId: W, qty: 10, kind: 'found' }, b.eng);
+  const d0 = D.issue(b.s, { whId: W, jobId: JOB, lines: [{ productId: p.id, qty: 10 }] }, b.head);
+  assert.equal(d0.doc.lines[0].covered, 10);
+  D.cancelIssue(b.s, d0.doc.id, b.head);
+  assert.equal(d0.doc.lines[0].covered, 0);
+  const d1 = D.issue(b.s, { whId: W, jobId: JOB, lines: [{ productId: p.id, qty: 10 }] }, b.head);
+  assert.equal(d1.prs.length, 0); assert.equal(d1.doc.lines[0].covered, 10);
+  assert.ok(e.cc);
+});
+test('fix9 two docs share one pending cc without double coverage', () => {
+  const b = base(); const p = mk(b).product;
+  D.submitOpening(b.s, { productId: p.id, whId: W, qty: 10, kind: 'found' }, b.eng);
+  const d0 = D.issue(b.s, { whId: W, jobId: JOB, lines: [{ productId: p.id, qty: 6 }] }, b.head);
+  const d1 = D.issue(b.s, { whId: W, jobId: JOB, lines: [{ productId: p.id, qty: 6 }] }, b.head);
+  assert.equal(d0.prs.length, 0); assert.equal(d1.prs.length, 1); assert.equal(d1.prs[0].qty, 2); assert.equal(d1.doc.lines[0].covered, 4);
+});
+test('fix4 CSV roll_no bumps the R counter', () => {
+  const b = base(); const roll = b.s.products.find((x) => x.isRoll);
+  const { rows } = D.parseOpeningCsv(b.s, `code,warehouse,location,qty,roll_no,roll_initial,batch
+${roll.code},${W},,50,R-009999,,
+`);
+  D.importOpening(b.s, rows, b.head);
+  const m = mk(b, { isRoll: true, unit: 'เมตร', initial: { whId: W, rollLengths: [5] } }, b.store).product;
+  const id = b.s.rolls.find((r) => r.productId === m.id).id;
+  assert.ok(id > 'R-009999', id);
+});
+test('fix6/7/8 count cc: ADJ doc on approve, logs by product, stacked cc replaced', () => {
+  const b = base(); const p = mkNA(b);
+  D.submitOpening(b.s, { productId: p.id, whId: W, qty: 10, kind: 'found' }, b.head);
+  const close = (v) => { const c = D.startCount(b.s, { whId: W }, b.store); D.setCounted(b.s, c.id, p.id, v); return D.closeCount(b.s, c.id, b.store).pending[0]; };
+  const c1 = close(7), c2 = close(8);
+  assert.equal(c1.stage, 'rejected'); assert.equal(c1.reason, 'แทนด้วย ' + c2.id); assert.equal(c2.stage, 'head');
+  assert.ok(b.s.audit.some((a) => a.action === 'count.queue' && a.ref === p.id && a.text.includes(c2.id)));
+  const nd = b.s.docs.length;
+  D.confirmOpening(b.s, c2.id, b.head, true);
+  assert.equal(D.qtyOf(b.s, p.id, W), 8);
+  const adj = b.s.docs[b.s.docs.length - 1];
+  assert.equal(b.s.docs.length, nd + 1); assert.equal(adj.type, 'adjust'); assert.ok(adj.note.includes(c2.id));
+  assert.ok(b.s.audit.some((a) => a.action === 'opening.approve' && a.ref === p.id && a.text.includes(c2.id)));
+});
+test('fix9 head confirming a store-stage needsApproval cc posts at once', () => {
+  const b = base(); const p = mkNA(b);
+  const e = D.submitOpening(b.s, { productId: p.id, whId: W, qty: 3, kind: 'found' }, b.eng);
+  D.confirmOpening(b.s, e.cc.id, b.head, true);
+  assert.equal(e.cc.stage, 'done'); assert.equal(D.qtyOf(b.s, p.id, W), 3);
+});
+test('fix9 confirm re-validates: counting warehouse refuses and keeps the cc pending', () => {
+  const b = base();
+  const r = mk(b, { initial: { whId: W, qty: 4 } }, b.eng);
+  b.s.warehouses[0].countId = 'CC-0099';
+  assert.throws(() => D.confirmOpening(b.s, r.opening.cc.id, b.store, true), { code: 'wh_counting' });
+  assert.equal(r.opening.cc.stage, 'store'); assert.equal(D.qtyOf(b.s, r.product.id, W), 0);
 });

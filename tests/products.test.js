@@ -156,7 +156,7 @@ test('initial stock: engineer pending, store posted, rolls by length, bad initia
   const r = D.addProduct(b.s, { name: 'สายตั้งต้น', unit: 'เมตร', isRoll: true, categoryId: b.cat, initial: { whId: 'W-BN', rollLengths: [100, 40] } }, b.store);
   assert.equal(D.qtyOf(b.s, r.product.id, 'W-BN'), 140); assert.equal(r.opening.cc, null);
   const n = b.s.products.length, pc = b.s.counters.P, nd = b.s.docs.length, rc = b.s.counters.CC, na = b.s.audit.length;
-  for (const initial of [{ whId: 'W-BN', qty: 0 }, { whId: 'W-BN', qty: 1.5 }, { whId: 'nope', qty: 1 }])
+  for (const initial of [{ whId: 'W-BN', qty: 0 }, { whId: 'W-BN', qty: 1.5 }, { whId: 'W-BN', shelf: 'ไม่มี', qty: 1 }, { whId: 'nope', qty: 1 }])
     assert.throws(() => D.addProduct(b.s, { name: 'พัง', unit: 'ตัว', categoryId: b.cat, initial }, b.store), D.DomainError);
   assert.equal(b.s.products.length, n); assert.equal(b.s.counters.P, pc);
   assert.equal(b.s.docs.length, nd); assert.equal(b.s.counters.CC, rc); assert.equal(b.s.audit.length, na);

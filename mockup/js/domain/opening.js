@@ -27,7 +27,7 @@
     const p = productOf(state, s.productId);
     if (!state.warehouses.some((w) => w.id === s.whId)) throw new DomainError('wh_required', 'เลือกคลังที่มีของ');
     assertWarehouseOpen(state, s.whId);
-    const shelf = s.kind === 'found' && s.shelf ? s.shelf : SHELF; // ยอดตั้งต้นวางที่ ทั่วไป เสมอ (OS-G3)
+    const shelf = s.shelf || SHELF;
     if (D.qcCodes(state, s.whId).includes(shelf)) throw new DomainError('shelf_invalid', 'วางที่ชั้นรอตรวจไม่ได้');
     const lengths = p.isRoll && s.rollLengths && s.rollLengths.length ? s.rollLengths.map(Number) : null;
     if (lengths) { if (!lengths.every((l) => l > 0)) throw new DomainError('roll_invalid', 'ใส่ความยาวของทุกม้วน (มากกว่า 0)'); }
@@ -36,34 +36,46 @@
     return { p, shelf, amount: ins.amount, rollLengths: lengths, apply: ins.apply };
   }
 
-  // ลงยอดจริง + กันของให้ใบเบิกที่รอ (ผ่านการตรวจแล้ว)
+  const OPEN_FILL = ['partial', 'waiting', 'ready'];
+  const openDocs = (state, whId) => state.docs.filter((d) => d.type === 'issue' && d.status === 'posted' && d.whId === whId && OPEN_FILL.includes(d.fill));
+
+  // ลงยอดจริง + ปรับยอดรอ + กันของให้ใบเบิกที่รอ (ผ่านการตรวจแล้ว)
   function land(state, apply, productId, whId) {
     apply();
-    rebalance(state, productId, whId, false, null);
+    const dropped = rebalance(state, productId, whId);
     D.reserveForWaiting(state, productId, whId);
+    ensurePRs(state, dropped);
   }
 
-  // ใบเบิกที่รอและ "ยอดรอครอบคลุม" ไว้ (ไม่เปิด PR) ให้ลดลงเมื่อยอดรอหายไป; openPR = ยอดไม่เข้า เปิด PR ให้ส่วนที่เคยครอบคลุม
-  function rebalance(state, productId, whId, openPR, actor) {
+  // ใบเบิกที่ยอดรอครอบคลุมไว้ (ไม่เปิด PR) ลด covered เมื่อยอดรอหายไป; คืนบรรทัดที่ลด เพื่อให้ ensurePRs ตรวจหลังกันของแล้ว
+  function rebalance(state, productId, whId) {
     const lines = [];
-    for (const d of state.docs) if (d.type === 'issue' && d.status === 'posted' && d.whId === whId) for (const l of d.lines) if (l.productId === productId && l.covered > 0) lines.push([d, l]);
+    for (const d of openDocs(state, whId)) for (const l of d.lines) if (l.productId === productId && l.covered > 0) lines.push([d, l]);
     let excess = r2(lines.reduce((a, [, l]) => a + l.covered, 0) - pendingOpening(state, productId, whId));
+    const dropped = [];
     for (const [d, l] of lines.sort((a, b) => b[0].at.localeCompare(a[0].at))) {
       if (excess <= 0) break;
       const take = Math.min(l.covered, excess);
       l.covered = r2(l.covered - take); excess = r2(excess - take);
-      const need = r2(Math.min(take, l.waiting - l.reserved));
-      if (openPR && need > 0) {
-        const pr = { id: nextId(state, 'PR'), productId, whId, qty: need, received: 0, status: 'open', reqId: d.id };
-        state.prs.push(pr); d.prIds.push(pr.id);
-        notify(state, [d.by], 'warn', `ยอดตั้งต้นของ ${productOf(state, productId).name} ไม่เข้า ${d.id} จึงเปิดรายการต้องซื้อ ${pr.id}`, '#/');
-      }
+      dropped.push([d, l]);
+    }
+    return dropped;
+  }
+  // บรรทัดที่เสียความครอบคลุมแล้วยังไม่ได้ของกันไว้และไม่มี PR เปิดอยู่ → เปิด PR ส่วนที่ขาด แจ้งผู้เบิก
+  function ensurePRs(state, dropped) {
+    for (const [d, l] of dropped) {
+      const have = state.prs.filter((r) => r.reqId === d.id && r.productId === l.productId && r.status === 'open').reduce((a, r) => a + r.qty - r.received, 0);
+      const need = r2(l.waiting - l.reserved - (l.covered || 0) - have);
+      if (need <= 0) continue;
+      const pr = { id: nextId(state, 'PR'), productId: l.productId, whId: d.whId, qty: need, received: 0, status: 'open', reqId: d.id };
+      state.prs.push(pr); d.prIds.push(pr.id);
+      notify(state, [d.by], 'warn', `ยอดตั้งต้นของ ${productOf(state, l.productId).name} ไม่ครอบคลุม ${d.id} จึงเปิดรายการต้องซื้อ ${pr.id}`, '#/');
     }
   }
   // postIssue ใช้: ส่วนขาดที่ยอดรอยังไม่ถูกใบอื่นนับครอบคลุม
   function coverable(state, productId, whId, need) {
     let used = 0;
-    for (const d of state.docs) if (d.type === 'issue' && d.status === 'posted' && d.whId === whId) for (const l of d.lines) if (l.productId === productId) used += l.covered || 0;
+    for (const d of openDocs(state, whId)) for (const l of d.lines) if (l.productId === productId) used += l.covered || 0;
     return r2(Math.max(0, Math.min(need, pendingOpening(state, productId, whId) - used)));
   }
 
@@ -84,17 +96,19 @@
     if (v.rollLengths) cc.rollLengths = v.rollLengths;
     ccs(state).push(cc);
     notify(state, usersOf(state, stage === 'store' ? 'store' : 'head'), 'info', `${actor.name} ส่งยอด ${v.p.name} ${text} รอ${stage === 'store' ? 'ยืนยัน' : 'อนุมัติ'} (${cc.id})`, '#/approvals');
-    log(state, actor, 'opening.submit', cc.id, `ส่งยอด ${v.p.name} ${text} ${input.whId} รอ${stage === 'store' ? ' Store' : 'หัวหน้า'}`);
+    log(state, actor, 'opening.submit', v.p.id, `${cc.id} ส่งยอด ${v.p.name} ${text} ${input.whId} รอ${stage === 'store' ? ' Store' : 'หัวหน้า'}`);
     return { cc, message: stage === 'store' ? `${pre}ส่งให้ Store ยืนยันยอด (${cc.id})` : `${pre}รอหัวหน้าอนุมัติยอด (${cc.id})` };
   }
 
   // ปรับยอดจากรอบนับของสินค้าที่ต้องอนุมัติ (ไม่ใช่หัวหน้าปิดรอบ) → รอหัวหน้า
   function queueCountDiff(state, count, line, diff, actor) {
     const p = productOf(state, line.productId);
-    const cc = { id: nextId(state, 'CC'), productId: p.id, whId: count.whId, shelf: SHELF, diff, by: actor.id, stage: 'head', reason: '', kind: 'count', countId: count.id, at: new Date().toISOString() };
+    const id = nextId(state, 'CC');
+    for (const o of ccs(state)) if (o.kind === 'count' && live(o) && o.productId === p.id && o.whId === count.whId) { o.stage = 'rejected'; o.reason = `แทนด้วย ${id}`; }
+    const cc = { id, productId: p.id, whId: count.whId, shelf: SHELF, diff, by: actor.id, stage: 'head', reason: '', kind: 'count', countId: count.id, at: new Date().toISOString() };
     ccs(state).push(cc);
     notify(state, usersOf(state, 'head'), 'info', `ปรับยอด ${p.name} ${diff > 0 ? '+' : ''}${D.formatQty(diff, p.unit)} จากรอบนับ ${count.id} รออนุมัติ (${cc.id})`, '#/approvals');
-    log(state, actor, 'count.queue', cc.id, `ปรับยอด ${p.name} ${diff} รอหัวหน้าอนุมัติ`);
+    log(state, actor, 'count.queue', p.id, `${cc.id} ปรับยอด ${p.name} ${diff} รอหัวหน้าอนุมัติ`);
     return cc;
   }
 
@@ -119,22 +133,25 @@
       const why = String(reason || '').trim();
       if (!why) throw new DomainError('reason_required', 'ใส่เหตุผลก่อน (จะแจ้งผู้ขอ)');
       cc.stage = 'rejected'; cc.reason = why;
-      if (cc.kind !== 'count') rebalance(state, cc.productId, cc.whId, true, actor);
+      if (cc.kind !== 'count') ensurePRs(state, rebalance(state, cc.productId, cc.whId));
       tell(`${cc.id} ${p.name} ${text} ไม่ผ่าน: ${why}`, 'warn');
-      log(state, actor, 'opening.reject', cc.id, `ไม่รับยอด ${p.name} ${text}: ${why}`);
+      log(state, actor, 'opening.reject', p.id, `${cc.id} ไม่รับยอด ${p.name} ${text}: ${why}`);
       return cc;
     }
     if (cc.stage === 'store' && actor.role === 'store' && p.needsApproval) {
       cc.stage = 'head';
       notify(state, usersOf(state, 'head'), 'info', `${cc.id} ${p.name} ${text} Store ยืนยันแล้ว รอหัวหน้าอนุมัติ`, '#/approvals');
-      log(state, actor, 'opening.confirm', cc.id, 'Store ยืนยัน ส่งต่อหัวหน้า');
+      log(state, actor, 'opening.confirm', p.id, `${cc.id} Store ยืนยัน ส่งต่อหัวหน้า`);
       return cc;
     }
     const apply = cc.kind === 'count' ? prepareCount(state, cc) : check(state, cc).apply;
     cc.stage = 'done'; // ก่อน land เพื่อให้ยอดรอของใบนี้ไม่ถูกนับซ้ำ
-    if (cc.kind === 'count') apply(); else land(state, apply, cc.productId, cc.whId);
+    if (cc.kind === 'count') {
+      apply();
+      state.docs.push({ id: nextId(state, 'ADJ'), type: 'adjust', status: 'posted', whId: cc.whId, lines: [{ productId: cc.productId, qty: cc.diff }], note: `ปรับยอดจากรอบนับ ${cc.countId} (${cc.id})`, by: actor.id, at: new Date().toISOString() });
+    } else land(state, apply, cc.productId, cc.whId);
     tell(`${cc.id} ${p.name} ${text} อนุมัติแล้ว`, 'info');
-    log(state, actor, 'opening.approve', cc.id, `อนุมัติยอด ${p.name} ${text}`);
+    log(state, actor, 'opening.approve', p.id, `${cc.id} อนุมัติยอด ${p.name} ${text}`);
     return cc;
   }
 
@@ -216,12 +233,13 @@
     for (const r of rows) {
       const p = state.products.find((x) => x.code === r.code || x.id === r.code);
       if (p.isRoll) {
+        const m = /^R-(\d+)$/.exec(r.rollNo); if (m && +m[1] > state.counters.R) state.counters.R = +m[1];
         state.rolls.push({ id: r.rollNo, productId: p.id, whId: r.whId, shelf: r.shelf, length: r.qty, opened: r.rollInitial != null && r.rollInitial > r.qty, batch: r.batch || '', fromRollId: null });
         D.touchRolls(state);
       } else D.putStock(state, { productId: p.id, whId: r.whId, shelf: r.shelf, qty: r.qty, batch: r.batch || '' });
       touched.add(p.id + '|' + r.whId);
     }
-    for (const k of touched) { const [pid, wid] = k.split('|'); rebalance(state, pid, wid, false, null); D.reserveForWaiting(state, pid, wid); }
+    for (const k of touched) { const [pid, wid] = k.split('|'); const dr = rebalance(state, pid, wid); D.reserveForWaiting(state, pid, wid); ensurePRs(state, dr); }
     log(state, actor, 'opening.import', 'opening', `นำเข้ายอดยกมา ${rows.length} แถว`);
     return { imported: rows.length };
   }

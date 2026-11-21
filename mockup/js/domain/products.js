@@ -87,7 +87,7 @@
     const ini = input.initial;
     if (ini) {
       // submitOpening ตรวจครบก่อนแตะข้อมูล; ไม่ผ่าน = ถอยสินค้าและเลข P ไม่เหลืออะไร
-      try { opening = D.submitOpening(state, { productId: id, whId: ini.whId, qty: ini.qty, rollLengths: ini.rollLengths, kind: 'opening' }, actor); }
+      try { opening = D.submitOpening(state, { productId: id, whId: ini.whId, shelf: ini.shelf, qty: ini.qty, rollLengths: ini.rollLengths, kind: 'opening' }, actor); }
       catch (e) { state.products.pop(); state.counters.P--; throw e; }
     }
     log(state, actor, 'product.add', id, 'สร้างสินค้า ' + product.name);

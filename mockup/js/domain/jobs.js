@@ -122,7 +122,7 @@
   };
   // ปล่อยของที่กันไว้ แล้วให้ใบที่รออยู่ได้ของต่อ
   function release(state, doc) {
-    for (const l of doc.lines) { l.reserved = 0; l.waiting = 0; }
+    for (const l of doc.lines) { l.reserved = 0; l.waiting = 0; l.covered = 0; }
     for (const pid of new Set(doc.lines.map((l) => l.productId))) D.reserveForWaiting(state, pid, doc.whId);
   }
 

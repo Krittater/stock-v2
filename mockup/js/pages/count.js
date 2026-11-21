@@ -112,16 +112,17 @@
       });
       const closeRound = () => {
         const sm = summary.value;
+        const heldN = user.value.role === 'head' ? 0 : current.value.lines.filter((l) => l.counted !== null && l.counted !== l.system && state.products.find((p) => p.id === l.productId).needsApproval).length;
         services.confirm.require({
           header: 'ปิดรอบนับ ' + current.value.id,
-          message: 'จะปรับยอด ' + sm.diffLines + ' รายการให้เท่ากับที่นับ และปลดล็อกคลัง · บรรทัดที่ยังไม่นับ (' + (sm.total - sm.counted).toLocaleString('en-US') + ' รายการ) จะไม่ถูกปรับ',
+          message: 'จะปรับยอด ' + sm.diffLines + ' รายการให้เท่ากับที่นับ' + (heldN ? ' (ในนี้ ' + heldN + ' รายการเป็นสินค้าต้องอนุมัติ รอหัวหน้ายืนยัน ยอดยังไม่เปลี่ยน)' : '') + ' และปลดล็อกคลัง · บรรทัดที่ยังไม่นับ (' + (sm.total - sm.counted).toLocaleString('en-US') + ' รายการ) จะไม่ถูกปรับ',
           icon: 'pi pi-question-circle',
           rejectProps: { label: 'กลับไปนับต่อ', severity: 'secondary', outlined: true },
           acceptProps: { label: 'ปิดรอบและปรับยอด' },
           accept: () => {
             const id = current.value.id;
             const res = act((s, u) => Domain.closeCount(s, id, u),
-              (x) => 'ปิดรอบนับ ' + id + ' แล้ว · ' + (x.adjust ? 'ปรับยอด ' + x.adjust.lines.length + ' รายการ (' + x.adjust.id + ')' : 'ไม่มียอดต้องปรับ'));
+              (x) => 'ปิดรอบนับ ' + id + ' แล้ว · ' + (x.adjust ? 'ปรับยอด ' + x.adjust.lines.length + ' รายการ (' + x.adjust.id + ')' : x.pending.length ? '' : 'ไม่มียอดต้องปรับ') + (x.pending.length ? (x.adjust ? ' · ' : '') + 'รอหัวหน้าอนุมัติ ' + x.pending.length + ' รายการ' : ''));
             if (res) go('count', { list: 1 });
           },
         });
